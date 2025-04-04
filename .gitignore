@@ -38,3 +38,4 @@ out/
 
 ### Appication Properties ###
 *.properties
+credentials.json
