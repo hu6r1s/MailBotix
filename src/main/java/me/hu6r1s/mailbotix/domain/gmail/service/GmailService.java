@@ -3,12 +3,16 @@ package me.hu6r1s.mailbotix.domain.gmail.service;
 import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.ListMessagesResponse;
 import com.google.api.services.gmail.model.Message;
+import com.google.api.services.gmail.model.MessagePart;
+import com.google.api.services.gmail.model.MessagePartBody;
 import com.google.api.services.gmail.model.MessagePartHeader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -90,9 +94,22 @@ public class GmailService {
     return emailList;
   }
 
-  public String getEmailContent(String messageId) throws IOException {
-    Message message = gmail.users().messages().get("me", messageId).execute();
-    return message.getSnippet();
+  public Map<String, Object> getEmailContent(String messageId) throws IOException {
+    Message message = gmail.users().messages().get("me", messageId)
+        .setFormat("full")
+        .execute();
+
+    Map<String, Object> mailDetails = new HashMap<>();
+    Map<String, String> headers = getHeaders(message);
+    mailDetails.put("headers", headers);
+
+    String bodyText = getPlainTextFromMessageParts(message.getPayload());
+    mailDetails.put("body", bodyText);
+
+    List<Map<String, Object>> attachments = extractAttachments(message);
+    mailDetails.put("attachments", attachments);
+
+    return mailDetails;
   }
 
   private boolean isSameDay(Date d1, Date d2) {
@@ -105,4 +122,72 @@ public class GmailService {
     return fmt.format(d1).equals(fmt.format(d2));
   }
 
+  private static Map<String, String> getHeaders(Message message) {
+    Map<String, String> headers = new HashMap<>();
+
+    for (MessagePartHeader header : message.getPayload().getHeaders()) {
+      switch (header.getName()) {
+        case "Subject":
+          headers.put("subject", header.getValue());
+          break;
+        case "From":
+          headers.put("from", header.getValue());
+          break;
+        case "To":
+          headers.put("to", header.getValue());
+          break;
+        case "Date":
+          headers.put("date", header.getValue());
+          break;
+      }
+    }
+    return headers;
+  }
+
+  private String getPlainTextFromMessageParts(MessagePart part) throws IOException {
+    if (part.getMimeType().equals("text/plain")) {
+      byte[] bodyBytes = Base64.getUrlDecoder().decode(part.getBody().getData());
+      return new String(bodyBytes, StandardCharsets.UTF_8);
+    }
+
+    if (part.getParts() != null) {
+      for (MessagePart subPart : part.getParts()) {
+        String result = getPlainTextFromMessageParts(subPart);
+        if (!result.isBlank()) {
+          return result;
+        }
+      }
+    }
+
+    return "";
+  }
+
+  private List<Map<String, Object>> extractAttachments(Message message) throws IOException {
+    List<Map<String, Object>> attachments = new ArrayList<>();
+    List<MessagePart> parts = message.getPayload().getParts();
+
+    if (parts == null) {
+      return attachments;
+    }
+
+    for (MessagePart part : parts) {
+      if (part.getFilename() != null && !part.getFilename().isEmpty()
+          && part.getBody().getAttachmentId() != null) {
+        String attachmentId = part.getBody().getAttachmentId();
+        MessagePartBody attachment = gmail.users().messages().attachments()
+            .get("me", message.getId(), attachmentId)
+            .execute();
+
+        Map<String, Object> fileInfo = new HashMap<>();
+        fileInfo.put("filename", part.getFilename());
+        fileInfo.put("mimeType", part.getMimeType());
+        fileInfo.put("size", part.getBody().getSize());
+        fileInfo.put("data", attachment.getData());
+
+        attachments.add(fileInfo);
+      }
+    }
+
+    return attachments;
+  }
 }

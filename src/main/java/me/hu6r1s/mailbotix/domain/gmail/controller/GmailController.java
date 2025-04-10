@@ -23,7 +23,7 @@ public class GmailController {
   }
 
   @GetMapping("/read/{messageId}")
-  public String getEmailContent(@PathVariable String messageId) throws IOException {
+  public Map<String, Object> getEmailContent(@PathVariable String messageId) throws IOException {
     return gmailService.getEmailContent(messageId);
   }
 }
