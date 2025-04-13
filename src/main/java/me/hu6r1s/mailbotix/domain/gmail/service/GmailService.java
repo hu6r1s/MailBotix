@@ -6,6 +6,11 @@ import com.google.api.services.gmail.model.Message;
 import com.google.api.services.gmail.model.MessagePart;
 import com.google.api.services.gmail.model.MessagePartBody;
 import com.google.api.services.gmail.model.MessagePartHeader;
+import jakarta.mail.MessagingException;
+import jakarta.mail.Session;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeMessage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -18,6 +23,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
 import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
@@ -113,6 +120,16 @@ public class GmailService {
     return mailDetails;
   }
 
+  public Message sendReply(SendMailRequest sendMailRequest)
+      throws MessagingException, IOException {
+    MimeMessage mimeMessage = createReplyMessage(sendMailRequest.getTo(),
+        sendMailRequest.getSubject(), sendMailRequest.getMessageContent(),
+        sendMailRequest.getOriginalMessageId());
+    Message message = sendMessage(mimeMessage);
+    message.setThreadId(sendMailRequest.getThreadId());
+    return gmail.users().messages().send("me", message).execute();
+  }
+
   private boolean isSameDay(Date d1, Date d2) {
     SimpleDateFormat fmt = new SimpleDateFormat("yyyyMMdd");
     return fmt.format(d1).equals(fmt.format(d2));
@@ -196,5 +213,34 @@ public class GmailService {
     }
 
     return attachments;
+  }
+
+  private MimeMessage createReplyMessage(String to, String subject, String replyMessage,
+      String originalMessageId) throws MessagingException {
+    Properties props = new Properties();
+    Session session = Session.getInstance(props, null);
+
+    MimeMessage reply = new MimeMessage(session);
+    reply.setFrom(new InternetAddress("me"));
+    reply.addRecipient(jakarta.mail.Message.RecipientType.TO, new InternetAddress(to));
+    reply.setSubject("Re: " + subject);
+    reply.setText(replyMessage);
+
+    reply.setHeader("In-Reply-To", originalMessageId);
+    reply.setHeader("References", originalMessageId);
+
+    return reply;
+  }
+
+  private Message sendMessage(MimeMessage email) throws MessagingException, IOException {
+    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+    email.writeTo(buffer);
+    byte[] rawMessageBytes = buffer.toByteArray();
+    String encodedEmail = Base64.getUrlEncoder().encodeToString(rawMessageBytes);
+
+    Message message = new Message();
+    message.setRaw(encodedEmail);
+
+    return message;
   }
 }
