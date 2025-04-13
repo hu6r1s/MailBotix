@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import me.hu6r1s.mailbotix.global.config.GmailConfig;
+import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -145,9 +146,15 @@ public class GmailService {
   }
 
   private String getPlainTextFromMessageParts(MessagePart part) throws IOException {
-    if (part.getMimeType().equals("text/plain")) {
+    if ("text/plain".equalsIgnoreCase(part.getMimeType()) && part.getBody() != null && part.getBody().getData() != null) {
       byte[] bodyBytes = Base64.getUrlDecoder().decode(part.getBody().getData());
       return new String(bodyBytes, StandardCharsets.UTF_8);
+    }
+
+    if ("text/html".equalsIgnoreCase(part.getMimeType()) && part.getBody() != null && part.getBody().getData() != null) {
+      byte[] bodyBytes = Base64.getUrlDecoder().decode(part.getBody().getData());
+      String html = new String(bodyBytes, StandardCharsets.UTF_8);
+      return Jsoup.parse(html).text();
     }
 
     if (part.getParts() != null) {
