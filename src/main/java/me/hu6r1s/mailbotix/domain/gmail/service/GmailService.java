@@ -13,7 +13,6 @@ import jakarta.mail.internet.MimeMessage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,22 +24,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
-import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 
 @Service
 public class GmailService {
 
-  private final Gmail gmail;
-
-  public GmailService(GmailConfig gmailConfig) throws IOException, GeneralSecurityException {
-    this.gmail = gmailConfig.getGmailService();
-  }
-
-  public List<Map<String, Object>> listEmails() throws IOException {
+  public List<Map<String, Object>> listEmails(Gmail service) throws IOException {
     List<Map<String, Object>> emailList = new ArrayList<>();
-    ListMessagesResponse response = gmail.users().messages().list("me")
+    ListMessagesResponse response = service.users().messages().list("me")
         .setLabelIds(Collections.singletonList("INBOX"))
         .setMaxResults(10L)
         .execute();
@@ -51,7 +43,7 @@ public class GmailService {
     }
 
     for (Message message : messages) {
-      Message fullMessage = gmail.users().messages().get("me", message.getId())
+      Message fullMessage = service.users().messages().get("me", message.getId())
           .setFormat("metadata")
           .setMetadataHeaders(Arrays.asList("Subject", "From", "Data"))
           .execute();
@@ -102,8 +94,8 @@ public class GmailService {
     return emailList;
   }
 
-  public Map<String, Object> getEmailContent(String messageId) throws IOException {
-    Message message = gmail.users().messages().get("me", messageId)
+  public Map<String, Object> getEmailContent(String messageId, Gmail service) throws IOException {
+    Message message = service.users().messages().get("me", messageId)
         .setFormat("full")
         .execute();
 
@@ -114,20 +106,20 @@ public class GmailService {
     String bodyText = getPlainTextFromMessageParts(message.getPayload());
     mailDetails.put("body", bodyText);
 
-    List<Map<String, Object>> attachments = extractAttachments(message);
+    List<Map<String, Object>> attachments = extractAttachments(message, service);
     mailDetails.put("attachments", attachments);
 
     return mailDetails;
   }
 
-  public Message sendReply(SendMailRequest sendMailRequest)
+  public Message sendReply(SendMailRequest sendMailRequest, Gmail service)
       throws MessagingException, IOException {
     MimeMessage mimeMessage = createReplyMessage(sendMailRequest.getTo(),
         sendMailRequest.getSubject(), sendMailRequest.getMessageContent(),
         sendMailRequest.getOriginalMessageId());
     Message message = sendMessage(mimeMessage);
     message.setThreadId(sendMailRequest.getThreadId());
-    return gmail.users().messages().send("me", message).execute();
+    return service.users().messages().send("me", message).execute();
   }
 
   private boolean isSameDay(Date d1, Date d2) {
@@ -186,7 +178,7 @@ public class GmailService {
     return "";
   }
 
-  private List<Map<String, Object>> extractAttachments(Message message) throws IOException {
+  private List<Map<String, Object>> extractAttachments(Message message, Gmail service) throws IOException {
     List<Map<String, Object>> attachments = new ArrayList<>();
     List<MessagePart> parts = message.getPayload().getParts();
 
@@ -198,7 +190,7 @@ public class GmailService {
       if (part.getFilename() != null && !part.getFilename().isEmpty()
           && part.getBody().getAttachmentId() != null) {
         String attachmentId = part.getBody().getAttachmentId();
-        MessagePartBody attachment = gmail.users().messages().attachments()
+        MessagePartBody attachment = service.users().messages().attachments()
             .get("me", message.getId(), attachmentId)
             .execute();
 
