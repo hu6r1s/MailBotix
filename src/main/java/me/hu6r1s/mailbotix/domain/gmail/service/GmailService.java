@@ -100,6 +100,10 @@ public class GmailService {
         .execute();
 
     Map<String, Object> mailDetails = new HashMap<>();
+
+    String threadId = message.getThreadId();
+    mailDetails.put("threadId", threadId);
+
     Map<String, String> headers = getHeaders(message);
     mailDetails.put("headers", headers);
 
