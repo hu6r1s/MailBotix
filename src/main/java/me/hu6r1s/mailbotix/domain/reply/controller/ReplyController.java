@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @RequestMapping("/api/reply")
 @CrossOrigin(origins = "${frontend.url}", allowCredentials = "true")
-public class ReplyController {
+public class ReplyController implements ReplyControllerDocs {
 
   private final ReplyService replyService;
 

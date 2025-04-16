@@ -3,6 +3,7 @@ package me.hu6r1s.mailbotix.domain.gmail.controller;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.services.gmail.Gmail;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @RequestMapping("/api/mail")
 @CrossOrigin(origins = "${frontend.url}", allowCredentials = "true")
-public class GmailController {
+public class GmailController implements GmailControllerDocs {
 
   private final GmailService gmailService;
   private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;

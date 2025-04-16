@@ -6,6 +6,7 @@ import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.util.store.DataStore;
 import com.google.api.client.util.store.MemoryDataStoreFactory;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -28,7 +29,7 @@ import org.springframework.web.servlet.view.RedirectView;
 @RequiredArgsConstructor
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "${frontend.url}", allowCredentials = "true")
-public class AuthController {
+public class AuthController implements AuthControllerDocs {
 
   private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
   private final MemoryDataStoreFactory memoryDataStoreFactory;
