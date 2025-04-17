@@ -6,7 +6,6 @@ import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.util.store.DataStore;
 import com.google.api.client.util.store.MemoryDataStoreFactory;
-import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -55,7 +54,8 @@ public class AuthController implements AuthControllerDocs {
   }
 
   @GetMapping("/google/callback")
-  public RedirectView googleCallback(@RequestParam String code, HttpServletRequest request, HttpServletResponse response) throws IOException {
+  public RedirectView googleCallback(@RequestParam String code, HttpServletRequest request,
+      HttpServletResponse response) throws IOException {
     HttpSession session = request.getSession();
 
     try {
@@ -66,7 +66,8 @@ public class AuthController implements AuthControllerDocs {
       String userId = UUID.randomUUID().toString();
       session.setAttribute(SESSION_USER_ID_KEY, userId);
 
-      Credential credential = googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);
+      Credential credential = googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse,
+          userId);
 
       return new RedirectView(frontendUrl + "/");
 
@@ -93,7 +94,8 @@ public class AuthController implements AuthControllerDocs {
       String userId = (String) session.getAttribute(SESSION_USER_ID_KEY);
       if (userId != null) {
         try {
-          DataStore<Serializable> credentialDataStore = memoryDataStoreFactory.getDataStore("StoredCredential");
+          DataStore<Serializable> credentialDataStore = memoryDataStoreFactory.getDataStore(
+              "StoredCredential");
 
           if (credentialDataStore != null) {
             credentialDataStore.delete(userId);
@@ -101,7 +103,9 @@ public class AuthController implements AuthControllerDocs {
             System.err.println("Could not retrieve DataStore instance.");
           }
         } catch (IOException e) {
-          System.err.println("Error deleting credential from DataStore for UserId: " + userId + " - " + e.getMessage());
+          System.err.println(
+              "Error deleting credential from DataStore for UserId: " + userId + " - "
+                  + e.getMessage());
         }
       }
       session.invalidate();

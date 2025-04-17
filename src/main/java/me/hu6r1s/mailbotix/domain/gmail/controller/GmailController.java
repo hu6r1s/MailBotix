@@ -3,9 +3,9 @@ package me.hu6r1s.mailbotix.domain.gmail.controller;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.services.gmail.Gmail;
-import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import jakarta.validation.Valid;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
@@ -68,7 +68,7 @@ public class GmailController implements GmailControllerDocs {
   }
 
   @PostMapping("/send")
-  public String sendReply(@RequestBody SendMailRequest sendMailRequest, HttpServletRequest request) {
+  public String sendReply(@Valid @RequestBody SendMailRequest sendMailRequest, HttpServletRequest request) {
     try {
       Gmail service = getGmailServiceForCurrentUser(request);
       gmailService.sendReply(sendMailRequest, service);

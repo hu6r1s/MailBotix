@@ -1,5 +1,6 @@
 package me.hu6r1s.mailbotix.domain.reply.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.domain.reply.dto.request.ReplyGenerationRequest;
 import me.hu6r1s.mailbotix.domain.reply.service.ReplyService;
@@ -18,7 +19,7 @@ public class ReplyController implements ReplyControllerDocs {
   private final ReplyService replyService;
 
   @PostMapping()
-  public String generateEmailReply(@RequestBody ReplyGenerationRequest replyGenerationRequest) {
+  public String generateEmailReply(@Valid @RequestBody ReplyGenerationRequest replyGenerationRequest) {
     return replyService.generateEmailReply(replyGenerationRequest);
   }
 }
