@@ -19,19 +19,22 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
+import me.hu6r1s.mailbotix.domain.gmail.dto.response.Attachment;
+import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailHeader;
+import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailResponse;
+import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListHeader;
+import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListResponse;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 
 @Service
 public class GmailService {
 
-  public List<Map<String, Object>> listEmails(Gmail service) throws IOException {
-    List<Map<String, Object>> emailList = new ArrayList<>();
+  public List<MailListResponse> listEmails(Gmail service) throws IOException {
+    List<MailListResponse> emailList = new ArrayList<>();
     ListMessagesResponse response = service.users().messages().list("me")
         .setLabelIds(Collections.singletonList("INBOX"))
         .setMaxResults(10L)
@@ -48,25 +51,25 @@ public class GmailService {
           .setMetadataHeaders(Arrays.asList("Subject", "From", "Data"))
           .execute();
 
-      Map<String, Object> mailInfo = new HashMap<>();
-      mailInfo.put("messageId", fullMessage.getId());
-      mailInfo.put("threadId", fullMessage.getThreadId());
+      String messageId = fullMessage.getId();
 
-      Map<String, String> headers = new HashMap<>();
+      String subject = "";
+      String from = "";
       for (MessagePartHeader header : fullMessage.getPayload().getHeaders()) {
         if (header.getName().equalsIgnoreCase("Subject")) {
-          headers.put("subject", header.getValue());
+          subject = header.getValue();
         } else if (header.getName().equalsIgnoreCase("From")) {
-          headers.put("from", header.getValue());
+          from = header.getValue();
         }
       }
-      mailInfo.put("headers", headers);
+      MailListHeader header = MailListHeader.builder()
+          .subject(subject)
+          .from(from)
+          .build();
 
       List<String> labels = fullMessage.getLabelIds();
-      mailInfo.put("unread", labels != null && labels.contains("UNREAD"));
-      mailInfo.put("starred", labels != null && labels.contains("STARRED"));
-      mailInfo.put("important", labels != null && labels.contains("IMPORTANT"));
-      mailInfo.put("hasAttachment", labels != null && labels.contains("HAS_ATTACHMENT"));
+      boolean unread = labels != null && labels.contains("UNREAD");
+      boolean hasAttachment = labels != null && labels.contains("HAS_ATTACHMENT");
 
       Date now = new Date();
       Date date = new Date(fullMessage.getInternalDate());
@@ -86,44 +89,40 @@ public class GmailService {
       } else {
         displayDate = yearMonthDayFormat.format(date);
       }
+      MailListResponse mail = MailListResponse.builder()
+          .messageId(messageId)
+          .date(displayDate)
+          .headers(header)
+          .unread(unread)
+          .hasAttachment(hasAttachment)
+          .build();
 
-      mailInfo.put("date", displayDate);
-
-      emailList.add(mailInfo);
+      emailList.add(mail);
     }
     return emailList;
   }
 
-  public Map<String, Object> getEmailContent(String messageId, Gmail service) throws IOException {
+  public MailDetailResponse getEmailContent(String messageId, Gmail service) throws IOException {
     Message message = service.users().messages().get("me", messageId)
         .setFormat("full")
         .execute();
 
-    Map<String, Object> mailDetails = new HashMap<>();
-
     String threadId = message.getThreadId();
-    mailDetails.put("threadId", threadId);
-
-    Map<String, String> headers = getHeaders(message);
-    mailDetails.put("headers", headers);
-
+    MailDetailHeader headers = getHeaders(message);
     String bodyText = getPlainTextFromMessageParts(message.getPayload());
-    mailDetails.put("body", bodyText);
+    List<Attachment> attachments = extractAttachments(message, service);
 
-    List<Map<String, Object>> attachments = extractAttachments(message, service);
-    mailDetails.put("attachments", attachments);
-
-    return mailDetails;
+    return MailDetailResponse.builder().threadId(threadId).headers(headers).body(bodyText).attachments(attachments).build();
   }
 
-  public Message sendReply(SendMailRequest sendMailRequest, Gmail service)
+  public void sendReply(SendMailRequest sendMailRequest, Gmail service)
       throws MessagingException, IOException {
     MimeMessage mimeMessage = createReplyMessage(sendMailRequest.getTo(),
         sendMailRequest.getSubject(), sendMailRequest.getMessageContent(),
         sendMailRequest.getOriginalMessageId());
     Message message = sendMessage(mimeMessage);
     message.setThreadId(sendMailRequest.getThreadId());
-    return service.users().messages().send("me", message).execute();
+    service.users().messages().send("me", message).execute();
   }
 
   private boolean isSameDay(Date d1, Date d2) {
@@ -136,29 +135,32 @@ public class GmailService {
     return fmt.format(d1).equals(fmt.format(d2));
   }
 
-  private static Map<String, String> getHeaders(Message message) {
-    Map<String, String> headers = new HashMap<>();
-
+  private MailDetailHeader getHeaders(Message message) {
+    String subject = "";
+    String from = "";
+    String to = "";
+    String date = "";
     for (MessagePartHeader header : message.getPayload().getHeaders()) {
       switch (header.getName()) {
         case "Subject":
-          headers.put("subject", header.getValue());
+          subject = header.getValue();
           break;
         case "From":
-          headers.put("from", header.getValue());
+          from = header.getValue();
           break;
         case "To":
-          headers.put("to", header.getValue());
+          to = header.getValue();
           break;
         case "Date":
-          headers.put("date", header.getValue());
+          date = header.getValue();
           break;
       }
     }
-    return headers;
+
+    return MailDetailHeader.builder().subject(subject).from(from).to(to).date(date).build();
   }
 
-  private String getPlainTextFromMessageParts(MessagePart part) throws IOException {
+  private String getPlainTextFromMessageParts(MessagePart part) {
     if ("text/plain".equalsIgnoreCase(part.getMimeType()) && part.getBody() != null && part.getBody().getData() != null) {
       byte[] bodyBytes = Base64.getUrlDecoder().decode(part.getBody().getData());
       return new String(bodyBytes, StandardCharsets.UTF_8);
@@ -182,8 +184,8 @@ public class GmailService {
     return "";
   }
 
-  private List<Map<String, Object>> extractAttachments(Message message, Gmail service) throws IOException {
-    List<Map<String, Object>> attachments = new ArrayList<>();
+  private List<Attachment> extractAttachments(Message message, Gmail service) throws IOException {
+    List<Attachment> attachments = new ArrayList<>();
     List<MessagePart> parts = message.getPayload().getParts();
 
     if (parts == null) {
@@ -198,13 +200,12 @@ public class GmailService {
             .get("me", message.getId(), attachmentId)
             .execute();
 
-        Map<String, Object> fileInfo = new HashMap<>();
-        fileInfo.put("filename", part.getFilename());
-        fileInfo.put("mimeType", part.getMimeType());
-        fileInfo.put("size", part.getBody().getSize());
-        fileInfo.put("data", attachment.getData());
-
-        attachments.add(fileInfo);
+        String filename = part.getFilename();
+        String mimeType = part.getMimeType();
+        long size = part.getBody().getSize();
+        String data = attachment.getData();
+        Attachment file = Attachment.builder().filename(filename).mimeType(mimeType).size(size).data(data).build();
+        attachments.add(file);
       }
     }
 

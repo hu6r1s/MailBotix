@@ -3,15 +3,17 @@ package me.hu6r1s.mailbotix.domain.gmail.controller;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.services.gmail.Gmail;
+import jakarta.mail.MessagingException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
+import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailResponse;
+import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListResponse;
 import me.hu6r1s.mailbotix.domain.gmail.service.GmailService;
 import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -54,28 +56,26 @@ public class GmailController implements GmailControllerDocs {
   }
 
   @GetMapping("/list")
-  public List<Map<String, Object>> listEmails(HttpServletRequest request)
+  public List<MailListResponse> listEmails(HttpServletRequest request)
       throws GeneralSecurityException, IOException {
       Gmail service = getGmailServiceForCurrentUser(request);
       return gmailService.listEmails(service);
   }
 
   @GetMapping("/read/{messageId}")
-  public Map<String, Object> getEmailContent(@PathVariable String messageId, HttpServletRequest request)
+  public MailDetailResponse getEmailContent(@PathVariable String messageId, HttpServletRequest request)
       throws IOException, GeneralSecurityException {
       Gmail service = getGmailServiceForCurrentUser(request);
       return gmailService.getEmailContent(messageId, service);
   }
 
   @PostMapping("/send")
-  public String sendReply(@Valid @RequestBody SendMailRequest sendMailRequest, HttpServletRequest request) {
+  public void sendReply(@Valid @RequestBody SendMailRequest sendMailRequest, HttpServletRequest request) {
     try {
       Gmail service = getGmailServiceForCurrentUser(request);
       gmailService.sendReply(sendMailRequest, service);
-
-      return "sent";
-    } catch (Exception e) {
-      return "send failed";
+    } catch (MessagingException | GeneralSecurityException | IOException e) {
+      throw new RuntimeException(e);
     }
   }
 }

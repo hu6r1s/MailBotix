@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.domain.reply.dto.request.ReplyGenerationRequest;
+import me.hu6r1s.mailbotix.domain.reply.dto.response.ReplyGenerationResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -23,7 +24,7 @@ public class ReplyService {
   @Value("${gemini.api.key}")
   private String geminiApiKey;
 
-  public String generateEmailReply(ReplyGenerationRequest replyGenerationRequest) {
+  public ReplyGenerationResponse generateEmailReply(ReplyGenerationRequest replyGenerationRequest) {
     String prompt = buildPrompt(replyGenerationRequest);
 
     Map<String, Object> requestBody = Map.of(
@@ -46,27 +47,28 @@ public class ReplyService {
       if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
         return extractResponseContent(response.getBody());
       } else {
-        return "Gemini API call failed: " + response.getStatusCode();
+        return new ReplyGenerationResponse("Gemini API call failed: " + response.getStatusCode());
       }
 
     } catch (Exception e) {
-      return "An error occurred while requesting Gemini API: " + e.getMessage();
+      return new ReplyGenerationResponse("An error occurred while requesting Gemini API: " + e.getMessage());
     }
   }
 
-  private String extractResponseContent(String response) {
+  private ReplyGenerationResponse extractResponseContent(String response) {
     try {
       ObjectMapper mapper = new ObjectMapper();
       JsonNode rootNode = mapper.readTree(response);
-      return rootNode.path("candidates")
+      String reply = rootNode.path("candidates")
           .get(0)
           .path("content")
           .path("parts")
           .get(0)
           .path("text")
           .asText();
+      return new ReplyGenerationResponse(reply);
     } catch (Exception e) {
-      return "Error processing request: " + e.getMessage();
+      return new ReplyGenerationResponse(e.getMessage());
     }
   }
 
