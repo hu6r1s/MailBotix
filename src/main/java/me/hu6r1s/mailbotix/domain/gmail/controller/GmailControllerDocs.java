@@ -2,6 +2,7 @@ package me.hu6r1s.mailbotix.domain.gmail.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.mail.MessagingException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -23,5 +24,6 @@ public interface GmailControllerDocs {
       throws IOException, GeneralSecurityException;
 
   @Operation(summary = "메일 발송", description = "메일을 수신자에게 발송하는 API")
-  void sendReply(@RequestBody SendMailRequest sendMailRequest, HttpServletRequest request);
+  void sendReply(@RequestBody SendMailRequest sendMailRequest, HttpServletRequest request)
+      throws MessagingException, GeneralSecurityException, IOException;
 }

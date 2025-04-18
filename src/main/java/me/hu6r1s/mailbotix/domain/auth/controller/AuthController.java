@@ -1,7 +1,6 @@
 package me.hu6r1s.mailbotix.domain.auth.controller;
 
 import com.google.api.client.auth.oauth2.AuthorizationCodeRequestUrl;
-import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.util.store.DataStore;
@@ -14,6 +13,8 @@ import java.io.Serializable;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.domain.auth.dto.AuthStatus;
+import me.hu6r1s.mailbotix.global.exception.CredentialDeleteException;
+import me.hu6r1s.mailbotix.global.exception.CredentialStorageException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -58,22 +59,20 @@ public class AuthController implements AuthControllerDocs {
       HttpServletResponse response) throws IOException {
     HttpSession session = request.getSession();
 
+    TokenResponse tokenResponse = googleAuthorizationCodeFlow.newTokenRequest(code)
+        .setRedirectUri(REDIRECT_URI)
+        .execute();
+
+    String userId = UUID.randomUUID().toString();
+    session.setAttribute(SESSION_USER_ID_KEY, userId);
     try {
-      TokenResponse tokenResponse = googleAuthorizationCodeFlow.newTokenRequest(code)
-          .setRedirectUri(REDIRECT_URI)
-          .execute();
+      googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);
 
-      String userId = UUID.randomUUID().toString();
-      session.setAttribute(SESSION_USER_ID_KEY, userId);
 
-      Credential credential = googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse,
-          userId);
-
-      return new RedirectView(frontendUrl + "/");
-
-    } catch (IOException e) {
-      return new RedirectView(frontendUrl + "/login?error=token_exchange_failed");
+    } catch (IOException storageEx) {
+      throw new CredentialStorageException("Failed to store credential for user " + userId, storageEx);
     }
+      return new RedirectView(frontendUrl);
   }
 
   @GetMapping("/status")
@@ -94,18 +93,14 @@ public class AuthController implements AuthControllerDocs {
       String userId = (String) session.getAttribute(SESSION_USER_ID_KEY);
       if (userId != null) {
         try {
-          DataStore<Serializable> credentialDataStore = memoryDataStoreFactory.getDataStore(
-              "StoredCredential");
+          @SuppressWarnings({"unchecked", "rawtypes"})
+          DataStore<Serializable> credentialDataStore = memoryDataStoreFactory.getDataStore("StoredCredential");
 
           if (credentialDataStore != null) {
             credentialDataStore.delete(userId);
-          } else {
-            System.err.println("Could not retrieve DataStore instance.");
           }
-        } catch (IOException e) {
-          System.err.println(
-              "Error deleting credential from DataStore for UserId: " + userId + " - "
-                  + e.getMessage());
+        } catch (IOException deleteEx) {
+          throw new CredentialDeleteException("Failed to delete credential for user " + userId, deleteEx);
         }
       }
       session.invalidate();

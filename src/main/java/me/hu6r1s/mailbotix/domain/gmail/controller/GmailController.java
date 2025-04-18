@@ -70,12 +70,9 @@ public class GmailController implements GmailControllerDocs {
   }
 
   @PostMapping("/send")
-  public void sendReply(@Valid @RequestBody SendMailRequest sendMailRequest, HttpServletRequest request) {
-    try {
+  public void sendReply(@Valid @RequestBody SendMailRequest sendMailRequest, HttpServletRequest request)
+      throws MessagingException, GeneralSecurityException, IOException {
       Gmail service = getGmailServiceForCurrentUser(request);
       gmailService.sendReply(sendMailRequest, service);
-    } catch (MessagingException | GeneralSecurityException | IOException e) {
-      throw new RuntimeException(e);
-    }
   }
 }
