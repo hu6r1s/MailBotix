@@ -17,6 +17,7 @@ public enum AuthErrorCode {
   CREDENTIAL_LOAD_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "AUTH-103", "사용자 인증 정보 로딩에 실패했습니다."),
   CREDENTIAL_DELETE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "AUTH-104", "사용자 인증 정보 삭제에 실패했습니다."),
   GOOGLE_CLIENT_SETUP_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "AUTH-105", "Google API 클라이언트 설정 중 보안 오류가 발생했습니다."),
+  CREDENTIAL_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "AUTH-106", "사용자 인증에 실패했습니다."),
   INTERNAL_AUTH_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "AUTH-999", "알 수 없는 인증 오류가 발생했습니다.");
 
   private final HttpStatus httpStatus;

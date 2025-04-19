@@ -59,6 +59,7 @@ public class GmailConfig {
         httpTransport, JSON_FACTORY, clientSecrets, SCOPES)
         .setDataStoreFactory(dataStoreFactory)
         .setAccessType("offline")
+        .setApprovalPrompt("consent")
         .build();
   }
 

@@ -108,4 +108,18 @@ public class GlobalExceptionHandler {
         .build();
     return new ResponseEntity<>(errorResponse, errorCode.getHttpStatus());
   }
+
+  @ExceptionHandler(AuthenticationRequiredException.class)
+  @ResponseStatus(HttpStatus.UNAUTHORIZED)
+  public ResponseEntity<ErrorResponse> handleAuthenticationRequiredException(AuthenticationRequiredException ex, WebRequest request) {
+    AuthErrorCode errorCode = AuthErrorCode.CREDENTIAL_UNAUTHORIZED;
+
+    ErrorResponse errorResponse = ErrorResponse.builder()
+        .code(errorCode.getCode())
+        .error(errorCode.getHttpStatus().getReasonPhrase())
+        .message(ex.getMessage())
+        .status(errorCode.getHttpStatus().value())
+        .build();
+    return new ResponseEntity<>(errorResponse, HttpStatus.UNAUTHORIZED);
+  }
 }
