@@ -35,67 +35,11 @@ public class GmailService {
 
   public List<MailListResponse> listEmails(Gmail service) throws IOException {
     List<MailListResponse> emailList = new ArrayList<>();
-    ListMessagesResponse response = service.users().messages().list("me")
-        .setLabelIds(Collections.singletonList("INBOX"))
-        .setMaxResults(10L)
-        .execute();
-
-    List<Message> messages = response.getMessages();
-    if (messages == null || messages.isEmpty()) {
-      return emailList;
-    }
+    List<Message> messages = fetchInboxMessages(service);
 
     for (Message message : messages) {
-      Message fullMessage = service.users().messages().get("me", message.getId())
-          .setFormat("metadata")
-          .setMetadataHeaders(Arrays.asList("Subject", "From", "Data"))
-          .execute();
-
-      String messageId = fullMessage.getId();
-
-      String subject = "";
-      String from = "";
-      for (MessagePartHeader header : fullMessage.getPayload().getHeaders()) {
-        if (header.getName().equalsIgnoreCase("Subject")) {
-          subject = header.getValue();
-        } else if (header.getName().equalsIgnoreCase("From")) {
-          from = header.getValue();
-        }
-      }
-      MailListHeader header = MailListHeader.builder()
-          .subject(subject)
-          .from(from)
-          .build();
-
-      List<String> labels = fullMessage.getLabelIds();
-      boolean unread = labels != null && labels.contains("UNREAD");
-      boolean hasAttachment = labels != null && labels.contains("HAS_ATTACHMENT");
-
-      Date now = new Date();
-      Date date = new Date(fullMessage.getInternalDate());
-      String displayDate;
-
-      SimpleDateFormat timeFormat = new SimpleDateFormat("a h:mm");
-      SimpleDateFormat monthDayFormat = new SimpleDateFormat("M월 d일");
-      SimpleDateFormat yearMonthDayFormat = new SimpleDateFormat("yy. MM. dd.");
-
-      boolean isToday = isSameDay(now, date);
-      boolean isThisYear = isSameYear(now, date);
-
-      if (isToday) {
-        displayDate = timeFormat.format(date);
-      } else if (isThisYear) {
-        displayDate = monthDayFormat.format(date);
-      } else {
-        displayDate = yearMonthDayFormat.format(date);
-      }
-      MailListResponse mail = MailListResponse.builder()
-          .messageId(messageId)
-          .date(displayDate)
-          .headers(header)
-          .unread(unread)
-          .hasAttachment(hasAttachment)
-          .build();
+      Message fullMessage = fetchFullMessage(service, message.getId());
+      MailListResponse mail = mapToMailListResponse(fullMessage);
 
       emailList.add(mail);
     }
@@ -123,6 +67,74 @@ public class GmailService {
     Message message = sendMessage(mimeMessage);
     message.setThreadId(sendMailRequest.getThreadId());
     service.users().messages().send("me", message).execute();
+  }
+
+  private List<Message> fetchInboxMessages(Gmail service) throws IOException {
+    ListMessagesResponse response = service.users().messages().list("me")
+        .setLabelIds(Collections.singletonList("INBOX"))
+        .setMaxResults(10L)
+        .execute();
+    return response.getMessages() != null ? response.getMessages() : Collections.emptyList();
+  }
+
+  private Message fetchFullMessage(Gmail service, String messageId) throws IOException {
+    return service.users().messages().get("me", messageId)
+        .setFormat("metadata")
+        .setMetadataHeaders(Arrays.asList("Subject", "From", "Date"))
+        .execute();
+  }
+
+  private MailListResponse mapToMailListResponse(Message message) {
+    String messageId = message.getId();
+    MailListHeader header = extractHeader(message);
+    List<String> labels = message.getLabelIds();
+
+    boolean unread = labels != null && labels.contains("UNREAD");
+    boolean hasAttachment = labels != null && labels.contains("HAS_ATTACHMENT");
+
+    Date date = new Date(message.getInternalDate());
+    String displayDate = formatDisplayDate(date);
+
+    return MailListResponse.builder()
+        .messageId(messageId)
+        .headers(header)
+        .unread(unread)
+        .hasAttachment(hasAttachment)
+        .date(displayDate)
+        .build();
+  }
+
+  private String formatDisplayDate(Date date) {
+    Date now = new Date();
+
+    SimpleDateFormat timeFormat = new SimpleDateFormat("a h:mm");
+    SimpleDateFormat monthDayFormat = new SimpleDateFormat("M월 d일");
+    SimpleDateFormat yearMonthDayFormat = new SimpleDateFormat("yy. MM. dd.");
+
+    if (isSameDay(now, date)) {
+      return timeFormat.format(date);
+    } else if (isSameYear(now, date)) {
+      return monthDayFormat.format(date);
+    } else {
+      return yearMonthDayFormat.format(date);
+    }
+  }
+
+  private MailListHeader extractHeader(Message message) {
+    String subject = "";
+    String from = "";
+    for (MessagePartHeader h : message.getPayload().getHeaders()) {
+      if ("Subject".equalsIgnoreCase(h.getName())) {
+        subject = h.getValue();
+      } else if ("From".equalsIgnoreCase(h.getName())) {
+        from = h.getValue();
+      }
+    }
+
+    return MailListHeader.builder()
+        .subject(subject)
+        .from(from)
+        .build();
   }
 
   private boolean isSameDay(Date d1, Date d2) {
