@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -56,10 +57,13 @@ public class GmailController implements GmailControllerDocs {
   }
 
   @GetMapping("/list")
-  public List<MailListResponse> listEmails(HttpServletRequest request)
+  public List<MailListResponse> listEmails(
+      HttpServletRequest request,
+      @RequestParam(name = "size", defaultValue = "10") int size
+      )
       throws GeneralSecurityException, IOException {
       Gmail service = getGmailServiceForCurrentUser(request);
-      return gmailService.listEmails(service);
+      return gmailService.listEmails(service, size);
   }
 
   @GetMapping("/read/{messageId}")

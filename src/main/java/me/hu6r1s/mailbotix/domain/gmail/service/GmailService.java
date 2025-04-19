@@ -33,9 +33,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class GmailService {
 
-  public List<MailListResponse> listEmails(Gmail service) throws IOException {
+  public List<MailListResponse> listEmails(Gmail service, int size) throws IOException {
     List<MailListResponse> emailList = new ArrayList<>();
-    List<Message> messages = fetchInboxMessages(service);
+    List<Message> messages = fetchInboxMessages(service, size);
 
     for (Message message : messages) {
       Message fullMessage = fetchFullMessage(service, message.getId());
@@ -69,10 +69,10 @@ public class GmailService {
     service.users().messages().send("me", message).execute();
   }
 
-  private List<Message> fetchInboxMessages(Gmail service) throws IOException {
+  private List<Message> fetchInboxMessages(Gmail service, int size) throws IOException {
     ListMessagesResponse response = service.users().messages().list("me")
         .setLabelIds(Collections.singletonList("INBOX"))
-        .setMaxResults(10L)
+        .setMaxResults((long) size)
         .execute();
     return response.getMessages() != null ? response.getMessages() : Collections.emptyList();
   }

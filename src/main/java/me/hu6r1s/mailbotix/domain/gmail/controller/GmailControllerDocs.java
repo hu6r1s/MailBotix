@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public interface GmailControllerDocs {
 
   @Operation(summary = "메일 리스트 조회", description = "메일 리스트로 조회하는 API")
-  List<MailListResponse> listEmails(HttpServletRequest request) throws GeneralSecurityException, IOException;
+  List<MailListResponse> listEmails(HttpServletRequest request, int size) throws GeneralSecurityException, IOException;
 
   @Operation(summary = "특정 메일 조회", description = "특정 메일의 상세 내용을 조회하는 API")
   MailDetailResponse getEmailContent(@PathVariable String messageId, HttpServletRequest request)
