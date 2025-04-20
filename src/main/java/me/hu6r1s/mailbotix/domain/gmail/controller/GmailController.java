@@ -40,7 +40,7 @@ public class GmailController implements GmailControllerDocs {
   private final GmailConfig gmailConfig;
   private static final String SESSION_USER_ID_KEY = "userId";
 
-  private Gmail getGmailServiceForCurrentUser(HttpServletRequest request) throws IOException, GeneralSecurityException {
+  public Gmail getGmailServiceForCurrentUser(HttpServletRequest request) throws IOException, GeneralSecurityException {
     HttpSession session = request.getSession(false);
 
     if (session == null || session.getAttribute(SESSION_USER_ID_KEY) == null) {
