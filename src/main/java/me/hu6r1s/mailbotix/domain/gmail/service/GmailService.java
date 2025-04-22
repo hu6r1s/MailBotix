@@ -1,5 +1,10 @@
 package me.hu6r1s.mailbotix.domain.gmail.service;
 
+
+import com.google.api.client.googleapis.batch.BatchRequest;
+import com.google.api.client.googleapis.batch.json.JsonBatchCallback;
+import com.google.api.client.googleapis.json.GoogleJsonError;
+import com.google.api.client.http.HttpHeaders;
 import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.ListMessagesResponse;
 import com.google.api.services.gmail.model.Message;
@@ -15,12 +20,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
+import lombok.extern.slf4j.Slf4j;
 import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
 import me.hu6r1s.mailbotix.domain.gmail.dto.response.Attachment;
 import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailHeader;
@@ -31,18 +36,31 @@ import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class GmailService {
 
+  private static final int BATCH_CHUNK_SIZE = 20;
+
   public List<MailListResponse> listEmails(Gmail service, int size) throws IOException {
-    List<MailListResponse> emailList = new ArrayList<>();
+    List<MailListResponse> emailList = Collections.synchronizedList(new ArrayList<>());
     List<Message> messages = fetchInboxMessages(service, size);
+    JsonBatchCallback<Message> callback = getMessageJsonBatchCallback(emailList);
 
-    for (Message message : messages) {
-      Message fullMessage = fetchFullMessage(service, message.getId());
-      MailListResponse mail = mapToMailListResponse(fullMessage);
+    int totalMessages = messages.size();
+    for (int i = 0; i < totalMessages; i += BATCH_CHUNK_SIZE) {
+      BatchRequest batch = service.batch();
+      int end = Math.min(i + BATCH_CHUNK_SIZE, totalMessages);
+      List<Message> chunk = messages.subList(i, end);
 
-      emailList.add(mail);
+      for (Message message : chunk) {
+        service.users().messages().get("me", message.getId())
+            .setFormat("metadata")
+            .queue(batch, callback);
+      }
+
+      batch.execute();
     }
+
     return emailList;
   }
 
@@ -56,7 +74,8 @@ public class GmailService {
     String bodyText = getPlainTextFromMessageParts(message.getPayload());
     List<Attachment> attachments = extractAttachments(message, service);
 
-    return MailDetailResponse.builder().threadId(threadId).headers(headers).body(bodyText).attachments(attachments).build();
+    return MailDetailResponse.builder().threadId(threadId).headers(headers).body(bodyText)
+        .attachments(attachments).build();
   }
 
   public void sendReply(SendMailRequest sendMailRequest, Gmail service)
@@ -77,11 +96,30 @@ public class GmailService {
     return response.getMessages() != null ? response.getMessages() : Collections.emptyList();
   }
 
-  private Message fetchFullMessage(Gmail service, String messageId) throws IOException {
-    return service.users().messages().get("me", messageId)
-        .setFormat("metadata")
-        .setMetadataHeaders(Arrays.asList("Subject", "From", "Date"))
-        .execute();
+//  private Message fetchFullMessage(Gmail service, ) throws IOException {
+//
+////    return service.users().messages().get("me", messageId)
+////        .setFormat("metadata")
+////        .setMetadataHeaders(Arrays.asList("Subject", "From", "Date"))
+////        .execute();
+//  }
+
+  private JsonBatchCallback<Message> getMessageJsonBatchCallback(List<MailListResponse> emailList) {
+    JsonBatchCallback<Message> callback = new JsonBatchCallback<Message>() {
+      @Override
+      public void onSuccess(Message messageDetail, HttpHeaders responseHeaders) throws IOException {
+        MailListResponse dto = parseMessageToDto(messageDetail);
+        if (dto != null) {
+          emailList.add(dto);
+        }
+      }
+
+      @Override
+      public void onFailure(GoogleJsonError e, HttpHeaders responseHeaders) throws IOException {
+        log.error("Failed to get message detail via batch: " + e.getMessage());
+      }
+    };
+    return callback;
   }
 
   private MailListResponse mapToMailListResponse(Message message) {
@@ -172,13 +210,39 @@ public class GmailService {
     return MailDetailHeader.builder().subject(subject).from(from).to(to).date(date).build();
   }
 
+  private MailListResponse parseMessageToDto(Message message) {
+    if (message == null) {
+      return null;
+    }
+    boolean unread = message.getLabelIds() != null && message.getLabelIds().contains("UNREAD");
+    boolean hasAttachment =
+        message.getPayload() != null && message.getPayload().getParts() != null &&
+            message.getPayload().getParts().stream()
+                .anyMatch(p -> p.getFilename() != null && !p.getFilename().isEmpty());
+
+    MailListHeader header = extractHeader(message);
+
+    Date date = new Date(message.getInternalDate());
+    String displayDate = formatDisplayDate(date);
+
+    return MailListResponse.builder()
+        .messageId(message.getId())
+        .date(displayDate)
+        .hasAttachment(hasAttachment)
+        .headers(header)
+        .unread(unread)
+        .build();
+  }
+
   private String getPlainTextFromMessageParts(MessagePart part) {
-    if ("text/plain".equalsIgnoreCase(part.getMimeType()) && part.getBody() != null && part.getBody().getData() != null) {
+    if ("text/plain".equalsIgnoreCase(part.getMimeType()) && part.getBody() != null
+        && part.getBody().getData() != null) {
       byte[] bodyBytes = Base64.getUrlDecoder().decode(part.getBody().getData());
       return new String(bodyBytes, StandardCharsets.UTF_8);
     }
 
-    if ("text/html".equalsIgnoreCase(part.getMimeType()) && part.getBody() != null && part.getBody().getData() != null) {
+    if ("text/html".equalsIgnoreCase(part.getMimeType()) && part.getBody() != null
+        && part.getBody().getData() != null) {
       byte[] bodyBytes = Base64.getUrlDecoder().decode(part.getBody().getData());
       String html = new String(bodyBytes, StandardCharsets.UTF_8);
       return Jsoup.parse(html).text();
@@ -216,7 +280,8 @@ public class GmailService {
         String mimeType = part.getMimeType();
         long size = part.getBody().getSize();
         String data = attachment.getData();
-        Attachment file = Attachment.builder().filename(filename).mimeType(mimeType).size(size).data(data).build();
+        Attachment file = Attachment.builder().filename(filename).mimeType(mimeType).size(size)
+            .data(data).build();
         attachments.add(file);
       }
     }
