@@ -31,7 +31,7 @@ import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 
 @Service
-public class GmailService implements MailService {
+public class GoogleMailService implements MailService {
 
   @Override
   public List<MailListResponse> listEmails(Gmail service, int size) throws IOException {
