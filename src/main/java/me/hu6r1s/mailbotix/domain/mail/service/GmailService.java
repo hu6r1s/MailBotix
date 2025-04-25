@@ -31,8 +31,9 @@ import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 
 @Service
-public class GmailService {
+public class GmailService implements MailService {
 
+  @Override
   public List<MailListResponse> listEmails(Gmail service, int size) throws IOException {
     List<MailListResponse> emailList = new ArrayList<>();
     List<Message> messages = fetchInboxMessages(service, size);
@@ -46,6 +47,7 @@ public class GmailService {
     return emailList;
   }
 
+  @Override
   public MailDetailResponse getEmailContent(String messageId, Gmail service) throws IOException {
     Message message = service.users().messages().get("me", messageId)
         .setFormat("full")
@@ -59,6 +61,7 @@ public class GmailService {
     return MailDetailResponse.builder().threadId(threadId).headers(headers).body(bodyText).attachments(attachments).build();
   }
 
+  @Override
   public void sendReply(SendMailRequest sendMailRequest, Gmail service)
       throws MessagingException, IOException {
     MimeMessage mimeMessage = createReplyMessage(sendMailRequest.getTo(),
