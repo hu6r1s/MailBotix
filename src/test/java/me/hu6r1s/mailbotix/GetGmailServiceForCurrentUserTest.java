@@ -28,7 +28,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class GetGoogleMailServiceForCurrentUserTest {
+class GetGmailServiceForCurrentUserTest {
 
   @Mock
   private GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
