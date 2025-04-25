@@ -1,4 +1,4 @@
-package me.hu6r1s.mailbotix.domain.gmail.service;
+package me.hu6r1s.mailbotix.domain.mail.service;
 
 import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.ListMessagesResponse;
@@ -21,12 +21,12 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
-import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.Attachment;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailHeader;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailResponse;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListHeader;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.Attachment;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailHeader;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListHeader;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 

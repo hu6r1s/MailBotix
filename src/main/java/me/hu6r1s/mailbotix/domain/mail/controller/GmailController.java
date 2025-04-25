@@ -1,4 +1,4 @@
-package me.hu6r1s.mailbotix.domain.gmail.controller;
+package me.hu6r1s.mailbotix.domain.mail.controller;
 
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.TokenResponseException;
@@ -13,10 +13,10 @@ import java.security.GeneralSecurityException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailResponse;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListResponse;
-import me.hu6r1s.mailbotix.domain.gmail.service.GmailService;
+import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
+import me.hu6r1s.mailbotix.domain.mail.service.GmailService;
 import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import org.springframework.web.bind.annotation.CrossOrigin;

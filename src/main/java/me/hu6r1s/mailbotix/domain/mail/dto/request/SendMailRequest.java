@@ -1,7 +1,6 @@
-package me.hu6r1s.mailbotix.domain.gmail.dto.request;
+package me.hu6r1s.mailbotix.domain.mail.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
