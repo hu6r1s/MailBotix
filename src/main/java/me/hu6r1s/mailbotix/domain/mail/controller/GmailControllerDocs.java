@@ -1,4 +1,4 @@
-package me.hu6r1s.mailbotix.domain.gmail.controller;
+package me.hu6r1s.mailbotix.domain.mail.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -7,9 +7,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
-import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailResponse;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 

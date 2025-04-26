@@ -16,7 +16,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import me.hu6r1s.mailbotix.domain.gmail.controller.GmailController;
+import me.hu6r1s.mailbotix.domain.mail.controller.GmailController;
 import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import org.junit.jupiter.api.BeforeEach;

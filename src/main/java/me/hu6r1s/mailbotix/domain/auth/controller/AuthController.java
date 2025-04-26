@@ -1,6 +1,7 @@
 package me.hu6r1s.mailbotix.domain.auth.controller;
 
 import com.google.api.client.auth.oauth2.AuthorizationCodeRequestUrl;
+import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.util.store.DataStore;
@@ -16,6 +17,7 @@ import me.hu6r1s.mailbotix.domain.auth.dto.AuthStatus;
 import me.hu6r1s.mailbotix.global.exception.CredentialDeleteException;
 import me.hu6r1s.mailbotix.global.exception.CredentialStorageException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +35,7 @@ public class AuthController implements AuthControllerDocs {
 
   private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
   private final MemoryDataStoreFactory memoryDataStoreFactory;
+  private final StringRedisTemplate redisTemplate;
 
   @Value("${google.redirect.uri}")
   private String REDIRECT_URI;
@@ -66,8 +69,9 @@ public class AuthController implements AuthControllerDocs {
     String userId = UUID.randomUUID().toString();
     session.setAttribute(SESSION_USER_ID_KEY, userId);
     try {
-      googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);
-
+      Credential credential = googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);
+      System.out.println(credential.getRefreshToken());
+//      redisTemplate.opsForValue().set(SESSION_USER_ID_KEY + userId, credential.getRefreshToken());
 
     } catch (IOException storageEx) {
       throw new CredentialStorageException("Failed to store credential for user " + userId, storageEx);

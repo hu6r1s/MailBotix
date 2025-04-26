@@ -1,4 +1,4 @@
-package me.hu6r1s.mailbotix.domain.gmail.service;
+package me.hu6r1s.mailbotix.domain.mail.service;
 
 
 import com.google.api.client.googleapis.batch.BatchRequest;
@@ -26,21 +26,22 @@ import java.util.Date;
 import java.util.List;
 import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
-import me.hu6r1s.mailbotix.domain.gmail.dto.request.SendMailRequest;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.Attachment;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailHeader;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailDetailResponse;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListHeader;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.Attachment;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailHeader;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListHeader;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
-public class GmailService {
+public class GoogleMailService implements MailService {
 
   private static final int BATCH_CHUNK_SIZE = 20;
 
+  @Override
   public List<MailListResponse> listEmails(Gmail service, int size) throws IOException {
     List<MailListResponse> emailList = Collections.synchronizedList(new ArrayList<>());
     List<Message> messages = fetchInboxMessages(service, size);
@@ -64,6 +65,7 @@ public class GmailService {
     return emailList;
   }
 
+  @Override
   public MailDetailResponse getEmailContent(String messageId, Gmail service) throws IOException {
     Message message = service.users().messages().get("me", messageId)
         .setFormat("full")
@@ -78,6 +80,7 @@ public class GmailService {
         .attachments(attachments).build();
   }
 
+  @Override
   public void sendReply(SendMailRequest sendMailRequest, Gmail service)
       throws MessagingException, IOException {
     MimeMessage mimeMessage = createReplyMessage(sendMailRequest.getTo(),
@@ -95,14 +98,6 @@ public class GmailService {
         .execute();
     return response.getMessages() != null ? response.getMessages() : Collections.emptyList();
   }
-
-//  private Message fetchFullMessage(Gmail service, ) throws IOException {
-//
-////    return service.users().messages().get("me", messageId)
-////        .setFormat("metadata")
-////        .setMetadataHeaders(Arrays.asList("Subject", "From", "Date"))
-////        .execute();
-//  }
 
   private JsonBatchCallback<Message> getMessageJsonBatchCallback(List<MailListResponse> emailList) {
     JsonBatchCallback<Message> callback = new JsonBatchCallback<Message>() {

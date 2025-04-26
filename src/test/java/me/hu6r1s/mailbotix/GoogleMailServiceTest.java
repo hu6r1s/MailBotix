@@ -10,8 +10,8 @@ import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.ListMessagesResponse;
 import java.io.IOException;
 import java.util.List;
-import me.hu6r1s.mailbotix.domain.gmail.dto.response.MailListResponse;
-import me.hu6r1s.mailbotix.domain.gmail.service.GmailService;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
+import me.hu6r1s.mailbotix.domain.mail.service.GoogleMailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,7 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class GmailServiceTest {
+class GoogleMailServiceTest {
 
   @Mock
   private Gmail mockGmailClient;
@@ -33,7 +33,7 @@ class GmailServiceTest {
   private Gmail.Users.Messages.List mockListRequest;
 
   @InjectMocks
-  private GmailService gmailService;
+  private GoogleMailService googleMailService;
 
   @BeforeEach
   void setUp() throws IOException {
@@ -53,7 +53,7 @@ class GmailServiceTest {
     when(mockListRequest.execute()).thenReturn(mockApiResponse);
 
     // when
-    List<MailListResponse> result = gmailService.listEmails(mockGmailClient, expectedSize);
+    List<MailListResponse> result = googleMailService.listEmails(mockGmailClient, expectedSize);
 
     // then
     verify(mockListRequest).setMaxResults(expectedLongSize);

@@ -1,4 +1,4 @@
-package me.hu6r1s.mailbotix.domain.gmail.dto.response;
+package me.hu6r1s.mailbotix.domain.mail.dto.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
