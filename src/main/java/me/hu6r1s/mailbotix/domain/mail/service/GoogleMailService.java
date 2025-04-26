@@ -117,26 +117,6 @@ public class GoogleMailService implements MailService {
     return callback;
   }
 
-  private MailListResponse mapToMailListResponse(Message message) {
-    String messageId = message.getId();
-    MailListHeader header = extractHeader(message);
-    List<String> labels = message.getLabelIds();
-
-    boolean unread = labels != null && labels.contains("UNREAD");
-    boolean hasAttachment = labels != null && labels.contains("HAS_ATTACHMENT");
-
-    Date date = new Date(message.getInternalDate());
-    String displayDate = formatDisplayDate(date);
-
-    return MailListResponse.builder()
-        .messageId(messageId)
-        .headers(header)
-        .unread(unread)
-        .hasAttachment(hasAttachment)
-        .date(displayDate)
-        .build();
-  }
-
   private String formatDisplayDate(Date date) {
     Date now = new Date();
 
