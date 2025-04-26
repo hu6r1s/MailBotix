@@ -70,8 +70,7 @@ public class AuthController implements AuthControllerDocs {
     session.setAttribute(SESSION_USER_ID_KEY, userId);
     try {
       Credential credential = googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);
-      System.out.println(credential.getRefreshToken());
-//      redisTemplate.opsForValue().set(SESSION_USER_ID_KEY + userId, credential.getRefreshToken());
+      redisTemplate.opsForValue().set(userId, credential.getRefreshToken());
 
     } catch (IOException storageEx) {
       throw new CredentialStorageException("Failed to store credential for user " + userId, storageEx);
