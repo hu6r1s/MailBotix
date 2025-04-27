@@ -23,5 +23,5 @@ public interface AuthControllerDocs {
   ResponseEntity<AuthStatus> getAuthStatus(HttpServletRequest request);
 
   @Operation(summary = "로그아웃", description = "사용자 권한을 제거하는 API")
-  ResponseEntity<Void> logout(HttpServletRequest request);
+  ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response);
 }

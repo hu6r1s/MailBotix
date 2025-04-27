@@ -6,7 +6,6 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.services.gmail.Gmail;
 import jakarta.mail.MessagingException;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -19,6 +18,8 @@ import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
 import me.hu6r1s.mailbotix.domain.mail.service.GoogleMailService;
 import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
+import me.hu6r1s.mailbotix.global.util.CookieUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,15 +39,16 @@ public class GmailController implements GmailControllerDocs {
   private final GoogleMailService googleMailService;
   private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
   private final GmailConfig gmailConfig;
-  private static final String SESSION_USER_ID_KEY = "userId";
+  private final StringRedisTemplate redisTemplate;
 
   public Gmail getGmailServiceForCurrentUser(HttpServletRequest request) throws IOException, GeneralSecurityException {
-    HttpSession session = request.getSession(false);
+    String userId = CookieUtils.getUserIdFromCookie(request);
+    String refreshToken = redisTemplate.opsForValue().get(userId);
 
-    if (session == null || session.getAttribute(SESSION_USER_ID_KEY) == null) {
-      throw new AuthenticationRequiredException("User not authenticated. Session or userId missing.");
+    if (refreshToken == null) {
+      throw new AuthenticationRequiredException("Session expired. Please log in again.");
     }
-    String userId = (String) session.getAttribute(SESSION_USER_ID_KEY);
+
     Credential credential = googleAuthorizationCodeFlow.loadCredential(userId);
 
     if (credential == null) {

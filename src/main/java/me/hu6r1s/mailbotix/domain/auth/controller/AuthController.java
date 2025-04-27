@@ -8,16 +8,18 @@ import com.google.api.client.util.store.DataStore;
 import com.google.api.client.util.store.MemoryDataStoreFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.io.Serializable;
+import java.time.Duration;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.domain.auth.dto.AuthStatus;
 import me.hu6r1s.mailbotix.global.exception.CredentialDeleteException;
 import me.hu6r1s.mailbotix.global.exception.CredentialStorageException;
+import me.hu6r1s.mailbotix.global.util.CookieUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,32 +47,36 @@ public class AuthController implements AuthControllerDocs {
 
   private static final String SESSION_USER_ID_KEY = "userId";
 
+  @Override
   @GetMapping("/google/url")
   public ResponseEntity<String> getGoogleAuthUrl(HttpServletRequest request) {
-    String state = UUID.randomUUID().toString();
-    request.getSession().setAttribute("state", state);
-
     AuthorizationCodeRequestUrl authorizationUrl = googleAuthorizationCodeFlow.newAuthorizationUrl()
         .setRedirectUri(REDIRECT_URI);
-//        .setState(state);
 
     return ResponseEntity.ok(authorizationUrl.build());
   }
 
+  @Override
   @GetMapping("/google/callback")
   public RedirectView googleCallback(@RequestParam String code, HttpServletRequest request,
       HttpServletResponse response) throws IOException {
-    HttpSession session = request.getSession();
-
     TokenResponse tokenResponse = googleAuthorizationCodeFlow.newTokenRequest(code)
         .setRedirectUri(REDIRECT_URI)
         .execute();
 
     String userId = UUID.randomUUID().toString();
-    session.setAttribute(SESSION_USER_ID_KEY, userId);
     try {
       Credential credential = googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);
       redisTemplate.opsForValue().set(userId, credential.getRefreshToken());
+
+      ResponseCookie userIdCookie = ResponseCookie.from(SESSION_USER_ID_KEY, userId)
+          .httpOnly(true)
+          .secure(true)
+          .path("/")
+          .sameSite("Lax")
+          .maxAge(Duration.ofHours(1))
+          .build();
+      response.addHeader("Set-Cookie", userIdCookie.toString());
 
     } catch (IOException storageEx) {
       throw new CredentialStorageException("Failed to store credential for user " + userId, storageEx);
@@ -78,22 +84,21 @@ public class AuthController implements AuthControllerDocs {
       return new RedirectView(frontendUrl);
   }
 
+  @Override
   @GetMapping("/status")
   public ResponseEntity<AuthStatus> getAuthStatus(HttpServletRequest request) {
-    HttpSession session = request.getSession(false);
-    if (session != null && session.getAttribute(SESSION_USER_ID_KEY) != null) {
-      String userId = (String) session.getAttribute(SESSION_USER_ID_KEY);
+    String userId = CookieUtils.getUserIdFromCookie(request);
+    if (userId != null) {
       return ResponseEntity.ok(new AuthStatus(true, userId));
     } else {
       return ResponseEntity.ok(new AuthStatus(false, null));
     }
   }
 
+  @Override
   @PostMapping("/logout")
-  public ResponseEntity<Void> logout(HttpServletRequest request) {
-    HttpSession session = request.getSession(false);
-    if (session != null) {
-      String userId = (String) session.getAttribute(SESSION_USER_ID_KEY);
+  public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
+    String userId = CookieUtils.getUserIdFromCookie(request);
       if (userId != null) {
         try {
           @SuppressWarnings({"unchecked", "rawtypes"})
@@ -101,13 +106,20 @@ public class AuthController implements AuthControllerDocs {
 
           if (credentialDataStore != null) {
             credentialDataStore.delete(userId);
+
+            ResponseCookie deleteCookie = ResponseCookie.from("userId", "")
+                    .httpOnly(true)
+                        .secure(true)
+                            .path("/")
+                                .maxAge(0)
+                                    .build();
+            response.addHeader("Set-Cookie", deleteCookie.toString());
+            redisTemplate.delete(userId);
           }
         } catch (IOException deleteEx) {
           throw new CredentialDeleteException("Failed to delete credential for user " + userId, deleteEx);
         }
       }
-      session.invalidate();
-    }
     return ResponseEntity.ok().build();
   }
 }
