@@ -8,12 +8,16 @@ import com.google.api.client.util.store.DataStore;
 import com.google.api.client.util.store.MemoryDataStoreFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.io.Serializable;
+import java.math.BigInteger;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.domain.auth.dto.AuthStatus;
+import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import me.hu6r1s.mailbotix.global.exception.CredentialDeleteException;
 import me.hu6r1s.mailbotix.global.exception.CredentialStorageException;
 import me.hu6r1s.mailbotix.global.util.CookieUtils;
@@ -50,20 +54,27 @@ public class AuthController implements AuthControllerDocs {
   @Override
   @GetMapping("/google/url")
   public ResponseEntity<String> getGoogleAuthUrl(HttpServletRequest request) {
+    HttpSession session = request.getSession();
+    String state = new BigInteger(130, new SecureRandom()).toString(32);
+    session.setAttribute("state", state);
     AuthorizationCodeRequestUrl authorizationUrl = googleAuthorizationCodeFlow.newAuthorizationUrl()
-        .setRedirectUri(REDIRECT_URI);
+        .setRedirectUri(REDIRECT_URI).setState(state);
 
     return ResponseEntity.ok(authorizationUrl.build());
   }
 
   @Override
   @GetMapping("/google/callback")
-  public RedirectView googleCallback(@RequestParam String code, HttpServletRequest request,
+  public RedirectView googleCallback(@RequestParam String code, @RequestParam String state,
+      HttpServletRequest request,
       HttpServletResponse response) throws IOException {
+    HttpSession session = request.getSession(false);
+    if (!state.equals(session.getAttribute("state"))) {
+      throw new AuthenticationRequiredException("CSRF token does not match.");
+    }
     TokenResponse tokenResponse = googleAuthorizationCodeFlow.newTokenRequest(code)
         .setRedirectUri(REDIRECT_URI)
         .execute();
-
     String userId = UUID.randomUUID().toString();
     try {
       Credential credential = googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);

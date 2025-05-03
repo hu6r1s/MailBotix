@@ -17,7 +17,7 @@ public interface AuthControllerDocs {
   ResponseEntity<String> getGoogleAuthUrl(HttpServletRequest request);
 
   @Operation(summary = "사용자 인가", description = "구글에서 사용자 인증코드를 통해 토근을 발급하는 API")
-  RedirectView googleCallback(@RequestParam String code, HttpServletRequest request, HttpServletResponse response) throws IOException;
+  RedirectView googleCallback(@RequestParam String code, @RequestParam String state, HttpServletRequest request, HttpServletResponse response) throws IOException;
 
   @Operation(summary = "사용자 상태", description = "사용자가 현재 권한이 있는지 확인하는 API")
   ResponseEntity<AuthStatus> getAuthStatus(HttpServletRequest request);
