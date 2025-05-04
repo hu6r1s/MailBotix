@@ -13,6 +13,7 @@ import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.services.gmail.Gmail;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -36,6 +37,8 @@ class GetGmailServiceForCurrentUserTest {
   private GmailConfig gmailConfig;
   @Mock
   private HttpServletRequest request;
+  @Mock
+  private HttpServletResponse response;
   @Mock
   private HttpSession session;
   @Mock
@@ -62,7 +65,7 @@ class GetGmailServiceForCurrentUserTest {
 
     // when & then
     assertThrows(AuthenticationRequiredException.class,
-        () -> gmailController.getGmailServiceForCurrentUser(request),
+        () -> gmailController.getGmailServiceForCurrentUser(request, response),
         "User not authenticated. Session or userId missing.");
 
     // given
@@ -71,7 +74,7 @@ class GetGmailServiceForCurrentUserTest {
 
     // when & then
     assertThrows(AuthenticationRequiredException.class,
-        () -> gmailController.getGmailServiceForCurrentUser(request),
+        () -> gmailController.getGmailServiceForCurrentUser(request, response),
         "User not authenticated. Session or userId missing.");
   }
 
@@ -85,7 +88,7 @@ class GetGmailServiceForCurrentUserTest {
 
     // when & then
     assertThrows(AuthenticationRequiredException.class,
-        () -> gmailController.getGmailServiceForCurrentUser(request),
+        () -> gmailController.getGmailServiceForCurrentUser(request, response),
         "Credential not found for user. Please log in again.");
   }
 
@@ -99,7 +102,7 @@ class GetGmailServiceForCurrentUserTest {
     when(credential.getExpiresInSeconds()).thenReturn(3600L); // 1시간 남음 시뮬레이션
 
     // when
-    Gmail resultService = gmailController.getGmailServiceForCurrentUser(request);
+    Gmail resultService = gmailController.getGmailServiceForCurrentUser(request, response);
 
     // then
     assertThat(resultService).isNotNull(); // Gmail 서비스 객체 반환 확인
@@ -118,7 +121,7 @@ class GetGmailServiceForCurrentUserTest {
     when(credential.refreshToken()).thenReturn(true); // Refresh 성공 시뮬레이션
 
     // when
-    Gmail resultService = gmailController.getGmailServiceForCurrentUser(request);
+    Gmail resultService = gmailController.getGmailServiceForCurrentUser(request, response);
 
     // then
     assertThat(resultService).isNotNull();
@@ -138,7 +141,7 @@ class GetGmailServiceForCurrentUserTest {
 
     // when & then
     assertThrows(AuthenticationRequiredException.class,
-        () -> gmailController.getGmailServiceForCurrentUser(request),
+        () -> gmailController.getGmailServiceForCurrentUser(request, response),
         "Could not refresh token (returned false). Please log in again.");
     verify(gmailConfig, never()).getGmailService(any()); // getGmailService 호출 안 됨
   }
@@ -155,7 +158,7 @@ class GetGmailServiceForCurrentUserTest {
 
     // when & then
     AuthenticationRequiredException exception = assertThrows(AuthenticationRequiredException.class,
-        () -> gmailController.getGmailServiceForCurrentUser(request));
+        () -> gmailController.getGmailServiceForCurrentUser(request, response));
 
     assertThat(exception.getMessage()).contains("refresh failed");
     verify(gmailConfig, never()).getGmailService(any());

@@ -1,7 +1,8 @@
 package me.hu6r1s.mailbotix.domain.auth.controller;
 
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.api.client.auth.oauth2.AuthorizationCodeRequestUrl;
-import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.util.store.DataStore;
@@ -14,9 +15,9 @@ import java.io.Serializable;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.domain.auth.dto.AuthStatus;
+import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import me.hu6r1s.mailbotix.global.exception.CredentialDeleteException;
 import me.hu6r1s.mailbotix.global.exception.CredentialStorageException;
@@ -42,6 +43,7 @@ public class AuthController implements AuthControllerDocs {
   private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
   private final MemoryDataStoreFactory memoryDataStoreFactory;
   private final StringRedisTemplate redisTemplate;
+  private final GmailConfig gmailConfig;
 
   @Value("${google.redirect.uri}")
   private String REDIRECT_URI;
@@ -67,30 +69,33 @@ public class AuthController implements AuthControllerDocs {
   @GetMapping("/google/callback")
   public RedirectView googleCallback(@RequestParam String code, @RequestParam String state,
       HttpServletRequest request,
-      HttpServletResponse response) throws IOException {
+      HttpServletResponse response) {
     HttpSession session = request.getSession(false);
     if (!state.equals(session.getAttribute("state"))) {
       throw new AuthenticationRequiredException("CSRF token does not match.");
     }
-    TokenResponse tokenResponse = googleAuthorizationCodeFlow.newTokenRequest(code)
-        .setRedirectUri(REDIRECT_URI)
-        .execute();
-    String userId = UUID.randomUUID().toString();
-    try {
-      Credential credential = googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);
-      redisTemplate.opsForValue().set(userId, credential.getRefreshToken());
 
-      ResponseCookie userIdCookie = ResponseCookie.from(SESSION_USER_ID_KEY, userId)
+    try {
+      TokenResponse tokenResponse = googleAuthorizationCodeFlow.newTokenRequest(code)
+          .setRedirectUri(REDIRECT_URI)
+          .execute();
+
+      String userId = getUserIdFromGoogleOrSession((String) tokenResponse.get("id_token"));
+
+      googleAuthorizationCodeFlow.createAndStoreCredential(tokenResponse, userId);
+      redisTemplate.opsForValue().set(userId, tokenResponse.getRefreshToken());
+
+      ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
           .httpOnly(true)
           .secure(true)
           .path("/")
           .sameSite("Lax")
-          .maxAge(Duration.ofHours(1))
+          .maxAge(Duration.ofSeconds(tokenResponse.getExpiresInSeconds()))
           .build();
       response.addHeader("Set-Cookie", userIdCookie.toString());
 
     } catch (IOException storageEx) {
-      throw new CredentialStorageException("Failed to store credential for user " + userId, storageEx);
+      throw new CredentialStorageException("Failed to store credential for user", storageEx);
     }
       return new RedirectView(frontendUrl);
   }
@@ -118,7 +123,7 @@ public class AuthController implements AuthControllerDocs {
           if (credentialDataStore != null) {
             credentialDataStore.delete(userId);
 
-            ResponseCookie deleteCookie = ResponseCookie.from("userId", "")
+            ResponseCookie deleteCookie = ResponseCookie.from("accessToken", "")
                     .httpOnly(true)
                         .secure(true)
                             .path("/")
@@ -132,5 +137,10 @@ public class AuthController implements AuthControllerDocs {
         }
       }
     return ResponseEntity.ok().build();
+  }
+
+  private String getUserIdFromGoogleOrSession(String idToken) {
+    DecodedJWT jwt = JWT.decode(idToken);
+    return jwt.getSubject();
   }
 }

@@ -31,6 +31,9 @@ public class GmailConfig {
   @Value("#{'${google.scopes}'.split(',')}")
   private List<String> SCOPES;
 
+  @Value("${google.redirect.uri}")
+  private String REDIRECT_URI;
+
   private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
   private static MemoryDataStoreFactory dataStoreFactory;
 
