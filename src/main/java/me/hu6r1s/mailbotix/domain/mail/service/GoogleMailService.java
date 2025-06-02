@@ -35,7 +35,7 @@ import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 
-@Service
+@Service("googleMailService")
 @Slf4j
 public class GoogleMailService implements MailService {
 

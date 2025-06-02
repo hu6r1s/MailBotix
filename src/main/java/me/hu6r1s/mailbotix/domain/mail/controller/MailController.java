@@ -37,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @RequestMapping("/api/mail")
 @CrossOrigin(origins = "${frontend.url}", allowCredentials = "true")
-public class GmailController implements GmailControllerDocs {
+public class MailController implements MailControllerDocs {
 
   private final GoogleMailService googleMailService;
   private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
