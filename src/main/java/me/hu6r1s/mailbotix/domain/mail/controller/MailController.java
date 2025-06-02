@@ -7,17 +7,19 @@ import com.google.api.services.gmail.Gmail;
 import jakarta.mail.MessagingException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailResponse;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
-import me.hu6r1s.mailbotix.domain.mail.service.GoogleMailService;
+import me.hu6r1s.mailbotix.domain.mail.service.MailService;
 import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import me.hu6r1s.mailbotix.global.util.CookieUtils;
@@ -39,54 +41,74 @@ import org.springframework.web.bind.annotation.RestController;
 @CrossOrigin(origins = "${frontend.url}", allowCredentials = "true")
 public class MailController implements MailControllerDocs {
 
-  private final GoogleMailService googleMailService;
+  private final Map<String, MailService> mailServices;
   private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
   private final GmailConfig gmailConfig;
   private final StringRedisTemplate redisTemplate;
+  private static final String SESSION_PROVIDER_KEY = "porvider";
 
-  public Gmail getGmailServiceForCurrentUser(HttpServletRequest request, HttpServletResponse response) throws IOException, GeneralSecurityException {
-    String userId = CookieUtils.getUserIdFromCookie(request);
-    String refreshToken = redisTemplate.opsForValue().get(userId);
-
-    if (refreshToken == null) {
-      throw new AuthenticationRequiredException("Session expired. Please log in again.");
+  private MailService getActiveMailSerivce(HttpSession session) {
+    if (session == null) {
+      log.warn("Session is null.");
+      throw new AuthenticationRequiredException("Session not found.Please login again.");
     }
-
-    Credential credential = googleAuthorizationCodeFlow.loadCredential(userId);
-
-    if (credential == null) {
-      throw new AuthenticationRequiredException("Credential not found for user. Please log in again.");
+    String provider = (String) session.getAttribute(SESSION_PROVIDER_KEY);
+    if (provider == null || provider.isEmpty()) {
+      log.warn("Mail provider not found in session.");
+      throw new AuthenticationRequiredException("Mail provider not selected. Please login again.");
     }
-
-    Long expiresIn = credential.getExpiresInSeconds();
-    if (expiresIn == null || expiresIn <= 60L) {
-      try {
-        boolean refreshed = credential.refreshToken();
-        if (!refreshed || credential.getAccessToken() == null) {
-          throw new AuthenticationRequiredException("Access token refresh failed. Please try again.");
-        }
-
-        String newRefreshToken = credential.getRefreshToken();
-        if (newRefreshToken != null && !newRefreshToken.equals(refreshToken)) {
-          redisTemplate.opsForValue().set(userId, newRefreshToken);
-        }
-
-        ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
-            .httpOnly(true)
-            .secure(true)
-            .path("/")
-            .sameSite("Lax")
-            .maxAge(Duration.ofSeconds(credential.getExpiresInSeconds()))
-            .build();
-        response.addHeader("Set-Cookie", userIdCookie.toString());
-      } catch (TokenResponseException e) {
-        redisTemplate.delete(userId);
-        throw new AuthenticationRequiredException("Session expired. Please log in again.");
-      }
+    MailService service = mailServices.get(provider.toLowerCase() + "MailService");
+    if (service == null) {
+      log.error("No MailService implementation found for provider: {}", provider);
+      throw new IllegalStateException("Unsupported mail provider: " + provider);
     }
-
-    return gmailConfig.getGmailService(credential);
+    log.debug("Using mail service for provider: {}", provider);
+    return service;
   }
+
+//  public Gmail getGmailServiceForCurrentUser(HttpServletRequest request, HttpServletResponse response) throws IOException, GeneralSecurityException {
+//    String userId = CookieUtils.getUserIdFromCookie(request);
+//    String refreshToken = redisTemplate.opsForValue().get(userId);
+//
+//    if (refreshToken == null) {
+//      throw new AuthenticationRequiredException("Session expired. Please log in again.");
+//    }
+//
+//    Credential credential = googleAuthorizationCodeFlow.loadCredential(userId);
+//
+//    if (credential == null) {
+//      throw new AuthenticationRequiredException("Credential not found for user. Please log in again.");
+//    }
+//
+//    Long expiresIn = credential.getExpiresInSeconds();
+//    if (expiresIn == null || expiresIn <= 60L) {
+//      try {
+//        boolean refreshed = credential.refreshToken();
+//        if (!refreshed || credential.getAccessToken() == null) {
+//          throw new AuthenticationRequiredException("Access token refresh failed. Please try again.");
+//        }
+//
+//        String newRefreshToken = credential.getRefreshToken();
+//        if (newRefreshToken != null && !newRefreshToken.equals(refreshToken)) {
+//          redisTemplate.opsForValue().set(userId, newRefreshToken);
+//        }
+//
+//        ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
+//            .httpOnly(true)
+//            .secure(true)
+//            .path("/")
+//            .sameSite("Lax")
+//            .maxAge(Duration.ofSeconds(credential.getExpiresInSeconds()))
+//            .build();
+//        response.addHeader("Set-Cookie", userIdCookie.toString());
+//      } catch (TokenResponseException e) {
+//        redisTemplate.delete(userId);
+//        throw new AuthenticationRequiredException("Session expired. Please log in again.");
+//      }
+//    }
+//
+//    return gmailConfig.getGmailService(credential);
+//  }
 
   @Override
   @GetMapping("/list")
