@@ -1,6 +1,9 @@
 package me.hu6r1s.mailbotix.domain.mail.service;
 
 
+import com.google.api.client.auth.oauth2.Credential;
+import com.google.api.client.auth.oauth2.TokenResponseException;
+import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.batch.BatchRequest;
 import com.google.api.client.googleapis.batch.json.JsonBatchCallback;
 import com.google.api.client.googleapis.json.GoogleJsonError;
@@ -18,6 +21,7 @@ import jakarta.mail.internet.MimeMessage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -25,24 +29,85 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.Attachment;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailContainerResponse;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailHeader;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListContainerResponse;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListHeader;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.TokenRefreshResult;
+import me.hu6r1s.mailbotix.global.config.GmailConfig;
+import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import org.jsoup.Jsoup;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-@Service("googleMailService")
 @Slf4j
+@Service("googleMailService")
+@RequiredArgsConstructor
 public class GoogleMailService implements MailService {
 
+  private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
+  private final StringRedisTemplate redisTemplate;
+  private final GmailConfig gmailConfig;
   private static final int BATCH_CHUNK_SIZE = 20;
 
+  public TokenRefreshResult getAuthenticatedGmailClient(String userId)
+      throws IOException, GeneralSecurityException {
+    String redisRefreshTokenKey = "google:" + userId + ":refresh";
+    String refreshToken = redisTemplate.opsForValue().get(redisRefreshTokenKey);
+
+    if (refreshToken == null) {
+      throw new AuthenticationRequiredException("Session expired. Please log in again.");
+    }
+
+    Credential credential = googleAuthorizationCodeFlow.loadCredential(userId);
+
+    if (credential == null) {
+      throw new AuthenticationRequiredException(
+          "Credential not found for user. Please log in again.");
+    }
+
+    Long expiresIn = credential.getExpiresInSeconds();
+    if (expiresIn == null || expiresIn <= 60L) {
+      try {
+        boolean refreshed = credential.refreshToken();
+        if (!refreshed || credential.getAccessToken() == null) {
+          throw new AuthenticationRequiredException(
+              "Access token refresh failed. Please try again.");
+        }
+
+        String newRefreshToken = credential.getRefreshToken();
+        if (newRefreshToken != null && !newRefreshToken.equals(refreshToken)) {
+          redisTemplate.opsForValue().set(redisRefreshTokenKey, newRefreshToken);
+          log.info("Google Refresh Token updated in Redis for user: {}", userId);
+        }
+        log.info("Google Access Token refreshed for user: {}", userId);
+      } catch (TokenResponseException e) {
+        redisTemplate.delete(redisRefreshTokenKey);
+        googleAuthorizationCodeFlow.getCredentialDataStore().delete(userId);
+        log.error("Google token refresh failed for user {}: {}", userId, e.getMessage());
+        throw new AuthenticationRequiredException("Session expired. Please log in again.");
+      }
+    }
+
+    Gmail gmailService = gmailConfig.getGmailService(credential);
+    return TokenRefreshResult.builder()
+        .gmailService(gmailService)
+        .credential(credential)
+        .build();
+  }
+
   @Override
-  public List<MailListResponse> listEmails(Gmail service, int size) throws IOException {
+  public MailListContainerResponse listEmails(String userId, int size)
+      throws IOException, GeneralSecurityException {
+    TokenRefreshResult result = getAuthenticatedGmailClient(userId);
+    Gmail service = result.getGmailService();
+
     List<MailListResponse> emailList = Collections.synchronizedList(new ArrayList<>());
     List<Message> messages = fetchInboxMessages(service, size);
     JsonBatchCallback<Message> callback = getMessageJsonBatchCallback(emailList);
@@ -54,35 +119,45 @@ public class GoogleMailService implements MailService {
       List<Message> chunk = messages.subList(i, end);
 
       for (Message message : chunk) {
-        service.users().messages().get("me", message.getId())
-            .setFormat("metadata")
+        service.users().messages().get("me", message.getId()).setFormat("metadata")
             .queue(batch, callback);
       }
 
       batch.execute();
     }
 
-    return emailList;
+    return MailListContainerResponse.builder()
+        .mailListResponseList(emailList)
+        .credential(result.getCredential())
+        .build();
   }
 
   @Override
-  public MailDetailResponse getEmailContent(String messageId, Gmail service) throws IOException {
-    Message message = service.users().messages().get("me", messageId)
-        .setFormat("full")
-        .execute();
+  public MailDetailContainerResponse getEmailContent(String messageId, String userId)
+      throws IOException, GeneralSecurityException {
+    TokenRefreshResult result = getAuthenticatedGmailClient(userId);
+    Gmail service = result.getGmailService();
+    Message message = service.users().messages().get("me", messageId).setFormat("full").execute();
 
     String threadId = message.getThreadId();
     MailDetailHeader headers = getHeaders(message);
     String bodyText = getPlainTextFromMessageParts(message.getPayload());
     List<Attachment> attachments = extractAttachments(message, service);
 
-    return MailDetailResponse.builder().threadId(threadId).headers(headers).body(bodyText)
+    MailDetailResponse mailDetailResponse = MailDetailResponse.builder().threadId(threadId).headers(headers).body(bodyText)
         .attachments(attachments).build();
+
+    return MailDetailContainerResponse.builder()
+        .mailDetailResponse(mailDetailResponse)
+        .credential(result.getCredential())
+        .build();
   }
 
   @Override
-  public void sendReply(SendMailRequest sendMailRequest, Gmail service)
-      throws MessagingException, IOException {
+  public void sendMail(SendMailRequest sendMailRequest, String userId)
+      throws MessagingException, IOException, GeneralSecurityException {
+    TokenRefreshResult result = getAuthenticatedGmailClient(userId);
+    Gmail service = result.getGmailService();
     MimeMessage mimeMessage = createReplyMessage(sendMailRequest.getTo(),
         sendMailRequest.getSubject(), sendMailRequest.getMessageContent(),
         sendMailRequest.getOriginalMessageId());
@@ -93,9 +168,7 @@ public class GoogleMailService implements MailService {
 
   private List<Message> fetchInboxMessages(Gmail service, int size) throws IOException {
     ListMessagesResponse response = service.users().messages().list("me")
-        .setLabelIds(Collections.singletonList("INBOX"))
-        .setMaxResults((long) size)
-        .execute();
+        .setLabelIds(Collections.singletonList("INBOX")).setMaxResults((long) size).execute();
     return response.getMessages() != null ? response.getMessages() : Collections.emptyList();
   }
 
@@ -144,10 +217,7 @@ public class GoogleMailService implements MailService {
       }
     }
 
-    return MailListHeader.builder()
-        .subject(subject)
-        .from(from)
-        .build();
+    return MailListHeader.builder().subject(subject).from(from).build();
   }
 
   private boolean isSameDay(Date d1, Date d2) {
@@ -190,23 +260,17 @@ public class GoogleMailService implements MailService {
       return null;
     }
     boolean unread = message.getLabelIds() != null && message.getLabelIds().contains("UNREAD");
-    boolean hasAttachment =
-        message.getPayload() != null && message.getPayload().getParts() != null &&
-            message.getPayload().getParts().stream()
-                .anyMatch(p -> p.getFilename() != null && !p.getFilename().isEmpty());
+    boolean hasAttachment = message.getPayload() != null && message.getPayload().getParts() != null
+        && message.getPayload().getParts().stream()
+        .anyMatch(p -> p.getFilename() != null && !p.getFilename().isEmpty());
 
     MailListHeader header = extractHeader(message);
 
     Date date = new Date(message.getInternalDate());
     String displayDate = formatDisplayDate(date);
 
-    return MailListResponse.builder()
-        .messageId(message.getId())
-        .date(displayDate)
-        .hasAttachment(hasAttachment)
-        .headers(header)
-        .unread(unread)
-        .build();
+    return MailListResponse.builder().messageId(message.getId()).date(displayDate)
+        .hasAttachment(hasAttachment).headers(header).unread(unread).build();
   }
 
   private String getPlainTextFromMessageParts(MessagePart part) {
@@ -248,8 +312,7 @@ public class GoogleMailService implements MailService {
           && part.getBody().getAttachmentId() != null) {
         String attachmentId = part.getBody().getAttachmentId();
         MessagePartBody attachment = service.users().messages().attachments()
-            .get("me", message.getId(), attachmentId)
-            .execute();
+            .get("me", message.getId(), attachmentId).execute();
 
         String filename = part.getFilename();
         String mimeType = part.getMimeType();

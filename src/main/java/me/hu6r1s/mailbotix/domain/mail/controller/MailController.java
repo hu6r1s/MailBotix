@@ -1,9 +1,5 @@
 package me.hu6r1s.mailbotix.domain.mail.controller;
 
-import com.google.api.client.auth.oauth2.Credential;
-import com.google.api.client.auth.oauth2.TokenResponseException;
-import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
-import com.google.api.services.gmail.Gmail;
 import jakarta.mail.MessagingException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -17,14 +13,15 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailContainerResponse;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailResponse;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListContainerResponse;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
 import me.hu6r1s.mailbotix.domain.mail.service.MailService;
-import me.hu6r1s.mailbotix.global.config.GmailConfig;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import me.hu6r1s.mailbotix.global.util.CookieUtils;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,12 +39,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class MailController implements MailControllerDocs {
 
   private final Map<String, MailService> mailServices;
-  private final GoogleAuthorizationCodeFlow googleAuthorizationCodeFlow;
-  private final GmailConfig gmailConfig;
-  private final StringRedisTemplate redisTemplate;
-  private static final String SESSION_PROVIDER_KEY = "porvider";
+  private static final String SESSION_PROVIDER_KEY = "provider";
 
-  private MailService getActiveMailSerivce(HttpSession session) {
+  private MailService getActiveMailService(HttpSession session) {
     if (session == null) {
       log.warn("Session is null.");
       throw new AuthenticationRequiredException("Session not found.Please login again.");
@@ -66,74 +60,66 @@ public class MailController implements MailControllerDocs {
     return service;
   }
 
-//  public Gmail getGmailServiceForCurrentUser(HttpServletRequest request, HttpServletResponse response) throws IOException, GeneralSecurityException {
-//    String userId = CookieUtils.getUserIdFromCookie(request);
-//    String refreshToken = redisTemplate.opsForValue().get(userId);
-//
-//    if (refreshToken == null) {
-//      throw new AuthenticationRequiredException("Session expired. Please log in again.");
-//    }
-//
-//    Credential credential = googleAuthorizationCodeFlow.loadCredential(userId);
-//
-//    if (credential == null) {
-//      throw new AuthenticationRequiredException("Credential not found for user. Please log in again.");
-//    }
-//
-//    Long expiresIn = credential.getExpiresInSeconds();
-//    if (expiresIn == null || expiresIn <= 60L) {
-//      try {
-//        boolean refreshed = credential.refreshToken();
-//        if (!refreshed || credential.getAccessToken() == null) {
-//          throw new AuthenticationRequiredException("Access token refresh failed. Please try again.");
-//        }
-//
-//        String newRefreshToken = credential.getRefreshToken();
-//        if (newRefreshToken != null && !newRefreshToken.equals(refreshToken)) {
-//          redisTemplate.opsForValue().set(userId, newRefreshToken);
-//        }
-//
-//        ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
-//            .httpOnly(true)
-//            .secure(true)
-//            .path("/")
-//            .sameSite("Lax")
-//            .maxAge(Duration.ofSeconds(credential.getExpiresInSeconds()))
-//            .build();
-//        response.addHeader("Set-Cookie", userIdCookie.toString());
-//      } catch (TokenResponseException e) {
-//        redisTemplate.delete(userId);
-//        throw new AuthenticationRequiredException("Session expired. Please log in again.");
-//      }
-//    }
-//
-//    return gmailConfig.getGmailService(credential);
-//  }
 
   @Override
   @GetMapping("/list")
-  public List<MailListResponse> listEmails(
+  public ResponseEntity<List<MailListResponse>> listEmails(
       HttpServletRequest request, HttpServletResponse response,
       @RequestParam(name = "size", defaultValue = "10") int size
-      )
-      throws GeneralSecurityException, IOException {
-      Gmail service = getGmailServiceForCurrentUser(request, response);
-      return googleMailService.listEmails(service, size);
+  ) throws GeneralSecurityException, IOException {
+    try {
+      HttpSession session = request.getSession(false);
+      MailService mailService = getActiveMailService(session);
+      String userId = CookieUtils.getUserIdFromCookie(request);
+      MailListContainerResponse mailListContainerResponse = mailService.listEmails(userId, size);
+
+      ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
+            .httpOnly(true)
+            .secure(true)
+            .path("/")
+            .sameSite("Lax")
+            .maxAge(Duration.ofSeconds(mailListContainerResponse.getCredential().getExpiresInSeconds()))
+            .build();
+        response.addHeader("Set-Cookie", userIdCookie.toString());
+      return ResponseEntity.ok(mailListContainerResponse.getMailListResponseList());
+    } catch (AuthenticationRequiredException e) {
+      log.warn("Authentication required for listing emails: {}", e.getMessage());
+      throw new AuthenticationRequiredException("Authentication required for listing emails: {}", e);
+    } catch (IllegalStateException e) {
+      log.error("Error selecting mail service: {}", e.getMessage());
+      throw new IllegalStateException("Error selecting mail service: {}", e);
+    }
   }
 
   @Override
   @GetMapping("/read/{messageId}")
-  public MailDetailResponse getEmailContent(@PathVariable String messageId, HttpServletRequest request, HttpServletResponse response)
+  public MailDetailResponse getEmailContent(@PathVariable String messageId,
+      HttpServletRequest request, HttpServletResponse response)
       throws IOException, GeneralSecurityException {
-      Gmail service = getGmailServiceForCurrentUser(request, response);
-      return googleMailService.getEmailContent(messageId, service);
+    HttpSession session = request.getSession(false);
+    MailService mailService = getActiveMailService(session);
+    String userId = CookieUtils.getUserIdFromCookie(request);
+    MailDetailContainerResponse mailDetailContainerResponse = mailService.getEmailContent(messageId, userId);
+
+    ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
+        .httpOnly(true)
+        .secure(true)
+        .path("/")
+        .sameSite("Lax")
+        .maxAge(Duration.ofSeconds(mailDetailContainerResponse.getCredential().getExpiresInSeconds()))
+        .build();
+    response.addHeader("Set-Cookie", userIdCookie.toString());
+    return mailDetailContainerResponse.getMailDetailResponse();
   }
 
   @Override
   @PostMapping("/send")
-  public void sendReply(@Valid @RequestBody SendMailRequest sendMailRequest, HttpServletRequest request, HttpServletResponse response)
+  public void sendMail(@Valid @RequestBody SendMailRequest sendMailRequest,
+      HttpServletRequest request, HttpServletResponse response)
       throws MessagingException, GeneralSecurityException, IOException {
-      Gmail service = getGmailServiceForCurrentUser(request, response);
-      googleMailService.sendReply(sendMailRequest, service);
+    HttpSession session = request.getSession(false);
+    MailService mailService = getActiveMailService(session);
+    String userId = CookieUtils.getUserIdFromCookie(request);
+    mailService.sendMail(sendMailRequest, userId);
   }
 }
