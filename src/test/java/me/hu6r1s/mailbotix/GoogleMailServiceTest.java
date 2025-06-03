@@ -9,8 +9,8 @@ import static org.mockito.Mockito.when;
 import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.ListMessagesResponse;
 import java.io.IOException;
-import java.util.List;
-import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
+import java.security.GeneralSecurityException;
+import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListContainerResponse;
 import me.hu6r1s.mailbotix.domain.mail.service.GoogleMailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,21 +44,22 @@ class GoogleMailServiceTest {
 
   @Test
   @DisplayName("listEmails 호출 시 지정된 size로 setMaxResults 호출")
-  void listEmails_SetsMaxResultsCorrectly() throws IOException {
+  void listEmails_SetsMaxResultsCorrectly() throws IOException, GeneralSecurityException {
     // given
     int expectedSize = 25;
     Long expectedLongSize = (long) expectedSize;
+    String userId = "asd123";
     ListMessagesResponse mockApiResponse = new ListMessagesResponse();
     when(mockListRequest.setMaxResults(expectedLongSize)).thenReturn(mockListRequest);
     when(mockListRequest.execute()).thenReturn(mockApiResponse);
 
     // when
-    List<MailListResponse> result = googleMailService.listEmails(mockGmailClient, expectedSize);
+    MailListContainerResponse result = googleMailService.listEmails(userId, expectedSize);
 
     // then
     verify(mockListRequest).setMaxResults(expectedLongSize);
-    assertThat(result).isNotNull();
-    assertThat(result).hasSize(expectedSize);
+    assertThat(result.getMailListResponseList()).isNotNull();
+    assertThat(result.getMailListResponseList()).hasSize(expectedSize);
   }
 
 }
