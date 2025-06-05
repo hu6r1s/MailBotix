@@ -155,6 +155,14 @@ public class AuthController implements AuthControllerDocs {
           .maxAge(0)
           .build();
       response.addHeader("Set-Cookie", deleteCookie.toString());
+
+      ResponseCookie deleteAppPassword = ResponseCookie.from("app_password", "")
+          .httpOnly(true)
+          .secure(true)
+          .path("/")
+          .maxAge(0)
+          .build();
+      response.addHeader("Set-Cookie", deleteAppPassword.toString());
       redisTemplate.delete(userId);
 
       if (session != null) {

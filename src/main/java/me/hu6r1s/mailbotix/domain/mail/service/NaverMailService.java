@@ -55,8 +55,6 @@ public class NaverMailService implements MailService {
     props.put("mail.imaps.host", imapHost);
     props.put("mail.imaps.port", imapPort);
     props.put("mail.imaps.ssl.enable", "true");
-    props.put("mail.imaps.auth.mechanisms", "XOAUTH2");
-    props.put("mail.imaps.sasl.mechanisms", "XOAUTH2");
 
     props.put("mail.transport.protocol", "smtp");
     props.put("mail.smtp.host", smtpHost);
