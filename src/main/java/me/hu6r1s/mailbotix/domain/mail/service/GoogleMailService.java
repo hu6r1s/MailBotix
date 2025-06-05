@@ -56,7 +56,7 @@ public class GoogleMailService implements MailService {
   private final GmailConfig gmailConfig;
   private static final int BATCH_CHUNK_SIZE = 20;
 
-  public TokenRefreshResult getAuthenticatedGmailClient(String userId)
+  private TokenRefreshResult getAuthenticatedGmailClient(String userId)
       throws IOException, GeneralSecurityException {
     String redisRefreshTokenKey = "google:" + userId + ":refresh";
     String refreshToken = redisTemplate.opsForValue().get(redisRefreshTokenKey);

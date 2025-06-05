@@ -12,5 +12,5 @@ import lombok.NoArgsConstructor;
 public class AuthStatus {
 
   private boolean loggedIn;
-  private String userId;
+  private String accessToken;
 }

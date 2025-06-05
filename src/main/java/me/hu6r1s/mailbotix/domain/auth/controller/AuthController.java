@@ -9,11 +9,17 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.domain.auth.dto.AuthStatus;
+import me.hu6r1s.mailbotix.domain.auth.dto.NaverTokenResponse;
 import me.hu6r1s.mailbotix.domain.auth.service.GoogleOauthService;
+import me.hu6r1s.mailbotix.domain.auth.service.NaverOauthService;
+import me.hu6r1s.mailbotix.domain.mail.MailProvider;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import me.hu6r1s.mailbotix.global.util.CookieUtils;
+import me.hu6r1s.mailbotix.global.util.TokenUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -33,7 +39,10 @@ public class AuthController implements AuthControllerDocs {
 
 
   private final GoogleOauthService googleOauthService;
+  private final NaverOauthService naverOauthService;
   private final StringRedisTemplate redisTemplate;
+  private final TokenUtils tokenUtils;
+  private final CookieUtils cookieUtils;
 
   @Value("${frontend.url}")
   private String frontendUrl;
@@ -45,10 +54,10 @@ public class AuthController implements AuthControllerDocs {
     String state = new BigInteger(130, new SecureRandom()).toString(32);
     session.setAttribute("state", state);
 
-    String authUrl = switch (provider.toLowerCase()) {
-      case "google" -> googleOauthService.buildAuthUrl(state);
-      // Todo naver 추가
-      default -> throw new IllegalArgumentException("Unsupported provider: " + provider);
+    MailProvider mailProvider = MailProvider.valueOf(provider.toUpperCase());
+    String authUrl = switch (mailProvider) {
+      case GOOGLE -> googleOauthService.buildAuthUrl(state);
+      case NAVER -> naverOauthService.buildAuthUrl(state);
     };
 
     return ResponseEntity.ok(authUrl);
@@ -66,40 +75,65 @@ public class AuthController implements AuthControllerDocs {
     if (!state.equals(session.getAttribute("state"))) {
       throw new AuthenticationRequiredException("CSRF token does not match.");
     }
+    session.removeAttribute("state");
 
     String userId;
-    TokenResponse tokenResponse;
+    String refreshToken = null;
+    Long expiresIn;
+    String accessToken;
 
-    switch (provider.toLowerCase()) {
-      case "google" -> {
-        tokenResponse = googleOauthService.getToken(code);
+    MailProvider mailProvider = MailProvider.valueOf(provider.toUpperCase());
+    switch (mailProvider) {
+      case GOOGLE -> {
+        TokenResponse tokenResponse = googleOauthService.getToken(code);
         userId = googleOauthService.getUserIdFromIdToken((String) tokenResponse.get("id_token"));
         googleOauthService.storeCredential(userId, tokenResponse);
+        refreshToken = tokenResponse.getRefreshToken();
+        expiresIn = tokenResponse.getExpiresInSeconds();
+        accessToken = (String) tokenResponse.get("id_token");
       }
-      // todo naver add
+      case NAVER -> {
+        NaverTokenResponse tokenResponse = naverOauthService.getToken(code);
+        if (tokenResponse.getError() != null) {
+          throw new AuthenticationRequiredException("Naver authentication failed: " + tokenResponse.getErrorDescription());
+        }
+
+        refreshToken = tokenResponse.getRefreshToken();
+        expiresIn = (tokenResponse.getExpiresIn() != null) ? tokenResponse.getExpiresIn().longValue() : 3600L;
+        accessToken = tokenResponse.getAccessToken();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(accessToken);
+        HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+        userId = tokenUtils.getUserInfoFromToken(requestEntity).getId();
+      }
       default -> throw new IllegalArgumentException("Unsupported provider: " + provider);
     }
-    redisTemplate.opsForValue().set(provider +":" + userId + ":refresh", tokenResponse.getRefreshToken());
-    session.setAttribute("provider", provider);
 
-    ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
+    String providerLower = provider.toLowerCase();
+    if (refreshToken != null) {
+      redisTemplate.opsForValue().set(providerLower + ":" + userId + ":refresh", refreshToken, Duration.ofDays(7L));
+    }
+    session.setAttribute("provider", providerLower);
+
+    ResponseCookie tokenCookie = ResponseCookie.from("access_token", accessToken)
         .httpOnly(true)
         .secure(true)
         .path("/")
         .sameSite("Lax")
-        .maxAge(Duration.ofSeconds(tokenResponse.getExpiresInSeconds()))
+        .maxAge(Duration.ofSeconds(expiresIn))
         .build();
-    response.addHeader("Set-Cookie", userIdCookie.toString());
+    response.addHeader("Set-Cookie", tokenCookie.toString());
 
-    return new RedirectView((frontendUrl));
+    return new RedirectView(frontendUrl + "/app-password");
   }
 
   @Override
   @GetMapping("/status")
   public ResponseEntity<AuthStatus> getAuthStatus(HttpServletRequest request) {
-    String userId = CookieUtils.getUserIdFromCookie(request);
-    if (userId != null) {
-      return ResponseEntity.ok(new AuthStatus(true, userId));
+    String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+    if (accessToken != null) {
+      return ResponseEntity.ok(new AuthStatus(true, accessToken));
     } else {
       return ResponseEntity.ok(new AuthStatus(false, null));
     }
@@ -108,13 +142,13 @@ public class AuthController implements AuthControllerDocs {
   @Override
   @PostMapping("/logout")
   public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
-    String userId = CookieUtils.getUserIdFromCookie(request);
+    String userId = cookieUtils.getAccessTokenFromCookie(request);
     if (userId != null) {
       HttpSession session = request.getSession(false);
       String provider = (String) session.getAttribute("provider");
       googleOauthService.deleteDataStore(provider +":" + userId + ":refresh");
 
-      ResponseCookie deleteCookie = ResponseCookie.from("userId", "")
+      ResponseCookie deleteCookie = ResponseCookie.from("access_token", "")
           .httpOnly(true)
           .secure(true)
           .path("/")

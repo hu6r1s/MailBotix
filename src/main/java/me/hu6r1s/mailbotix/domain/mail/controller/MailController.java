@@ -1,5 +1,6 @@
 package me.hu6r1s.mailbotix.domain.mail.controller;
 
+import com.auth0.jwt.JWT;
 import jakarta.mail.MessagingException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.hu6r1s.mailbotix.domain.mail.MailProvider;
 import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailContainerResponse;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailDetailResponse;
@@ -19,6 +21,7 @@ import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListContainerResponse;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.MailListResponse;
 import me.hu6r1s.mailbotix.domain.mail.service.MailService;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
+import me.hu6r1s.mailbotix.global.util.AppPasswordContext;
 import me.hu6r1s.mailbotix.global.util.CookieUtils;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -39,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MailController implements MailControllerDocs {
 
   private final Map<String, MailService> mailServices;
+  private final CookieUtils cookieUtils;
   private static final String SESSION_PROVIDER_KEY = "provider";
 
   private MailService getActiveMailService(HttpSession session) {
@@ -70,24 +74,35 @@ public class MailController implements MailControllerDocs {
     try {
       HttpSession session = request.getSession(false);
       MailService mailService = getActiveMailService(session);
-      String userId = CookieUtils.getUserIdFromCookie(request);
-      MailListContainerResponse mailListContainerResponse = mailService.listEmails(userId, size);
 
-      ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
-            .httpOnly(true)
-            .secure(true)
-            .path("/")
-            .sameSite("Lax")
-            .maxAge(Duration.ofSeconds(mailListContainerResponse.getCredential().getExpiresInSeconds()))
-            .build();
-        response.addHeader("Set-Cookie", userIdCookie.toString());
+      MailProvider mailProvider = MailProvider.valueOf(
+          ((String) session.getAttribute(SESSION_PROVIDER_KEY)).toUpperCase());
+      MailListContainerResponse mailListContainerResponse = null;
+      switch (mailProvider) {
+        case GOOGLE -> {
+          String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+          String userId = JWT.decode(accessToken).getSubject();
+          mailListContainerResponse = mailService.listEmails(userId, size);
+        }
+        case NAVER -> {
+          String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+          String password = cookieUtils.getAppPasswordFromCookie(request);
+          AppPasswordContext.set(password);
+          mailListContainerResponse = mailService.listEmails(accessToken, size);
+          AppPasswordContext.clear();
+        }
+      }
+
       return ResponseEntity.ok(mailListContainerResponse.getMailListResponseList());
     } catch (AuthenticationRequiredException e) {
       log.warn("Authentication required for listing emails: {}", e.getMessage());
-      throw new AuthenticationRequiredException("Authentication required for listing emails: {}", e);
+      throw new AuthenticationRequiredException("Authentication required for listing emails: {}",
+          e);
     } catch (IllegalStateException e) {
       log.error("Error selecting mail service: {}", e.getMessage());
       throw new IllegalStateException("Error selecting mail service: {}", e);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
   }
 
@@ -98,15 +113,17 @@ public class MailController implements MailControllerDocs {
       throws IOException, GeneralSecurityException {
     HttpSession session = request.getSession(false);
     MailService mailService = getActiveMailService(session);
-    String userId = CookieUtils.getUserIdFromCookie(request);
-    MailDetailContainerResponse mailDetailContainerResponse = mailService.getEmailContent(messageId, userId);
+    String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+    MailDetailContainerResponse mailDetailContainerResponse = mailService.getEmailContent(messageId,
+        accessToken);
 
-    ResponseCookie userIdCookie = ResponseCookie.from("userId", userId)
+    ResponseCookie userIdCookie = ResponseCookie.from("access_token", accessToken)
         .httpOnly(true)
         .secure(true)
         .path("/")
         .sameSite("Lax")
-        .maxAge(Duration.ofSeconds(mailDetailContainerResponse.getCredential().getExpiresInSeconds()))
+        .maxAge(
+            Duration.ofSeconds(mailDetailContainerResponse.getCredential().getExpiresInSeconds()))
         .build();
     response.addHeader("Set-Cookie", userIdCookie.toString());
     return mailDetailContainerResponse.getMailDetailResponse();
@@ -119,7 +136,7 @@ public class MailController implements MailControllerDocs {
       throws MessagingException, GeneralSecurityException, IOException {
     HttpSession session = request.getSession(false);
     MailService mailService = getActiveMailService(session);
-    String userId = CookieUtils.getUserIdFromCookie(request);
-    mailService.sendMail(sendMailRequest, userId);
+    String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+    mailService.sendMail(sendMailRequest, accessToken);
   }
 }
