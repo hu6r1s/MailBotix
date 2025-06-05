@@ -81,6 +81,7 @@ public class AuthController implements AuthControllerDocs {
     String refreshToken = null;
     Long expiresIn;
     String accessToken;
+    String redirectUrl;
 
     MailProvider mailProvider = MailProvider.valueOf(provider.toUpperCase());
     switch (mailProvider) {
@@ -91,6 +92,7 @@ public class AuthController implements AuthControllerDocs {
         refreshToken = tokenResponse.getRefreshToken();
         expiresIn = tokenResponse.getExpiresInSeconds();
         accessToken = (String) tokenResponse.get("id_token");
+        redirectUrl = frontendUrl;
       }
       case NAVER -> {
         NaverTokenResponse tokenResponse = naverOauthService.getToken(code);
@@ -106,6 +108,7 @@ public class AuthController implements AuthControllerDocs {
         headers.setBearerAuth(accessToken);
         HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
         userId = tokenUtils.getUserInfoFromToken(requestEntity).getId();
+        redirectUrl = frontendUrl + "/app-password";
       }
       default -> throw new IllegalArgumentException("Unsupported provider: " + provider);
     }
@@ -125,7 +128,7 @@ public class AuthController implements AuthControllerDocs {
         .build();
     response.addHeader("Set-Cookie", tokenCookie.toString());
 
-    return new RedirectView(frontendUrl + "/app-password");
+    return new RedirectView(redirectUrl);
   }
 
   @Override
