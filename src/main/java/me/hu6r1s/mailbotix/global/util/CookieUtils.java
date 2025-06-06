@@ -2,7 +2,9 @@ package me.hu6r1s.mailbotix.global.util;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -10,6 +12,7 @@ import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -42,6 +45,17 @@ public class CookieUtils {
       }
     }
     throw new AuthenticationRequiredException("access_token cookie not found. Please log in again.");
+  }
+
+  public void setAccessTokenToCookie(HttpServletResponse response, String accessToken, Long expiresIn) {
+    ResponseCookie accessTokenCookie = ResponseCookie.from("access_token", accessToken)
+        .httpOnly(true)
+        .secure(true)
+        .path("/")
+        .sameSite("Lax")
+        .maxAge(Duration.ofSeconds(expiresIn))
+        .build();
+    response.addHeader("Set-Cookie", accessTokenCookie.toString());
   }
 
   private String decryptAES(String encryptedPassword, String secretKey) throws Exception {

@@ -78,6 +78,10 @@ public class MailController implements MailControllerDocs {
           String accessToken = cookieUtils.getAccessTokenFromCookie(request);
           String userId = JWT.decode(accessToken).getSubject();
           mailListContainerResponse = mailService.listEmails(userId, size);
+          cookieUtils.setAccessTokenToCookie(response,
+              mailListContainerResponse.getCredential().getAccessToken(),
+              mailListContainerResponse.getCredential()
+                  .getExpiresInSeconds());
         }
         case NAVER -> {
           String accessToken = cookieUtils.getAccessTokenFromCookie(request);
@@ -118,6 +122,10 @@ public class MailController implements MailControllerDocs {
           String userId = JWT.decode(accessToken).getSubject();
           mailDetailContainerResponse = mailService.getEmailContent(messageId,
               userId);
+          cookieUtils.setAccessTokenToCookie(response,
+              mailDetailContainerResponse.getCredential().getAccessToken(),
+              mailDetailContainerResponse.getCredential()
+                  .getExpiresInSeconds());
         }
         case NAVER -> {
           String accessToken = cookieUtils.getAccessTokenFromCookie(request);
