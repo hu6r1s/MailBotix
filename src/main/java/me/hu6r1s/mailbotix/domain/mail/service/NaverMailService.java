@@ -83,6 +83,7 @@ public class NaverMailService implements MailService {
       throws IOException, MessagingException {
     NaverUserProfileResponse.Response userInfo = getUserInfo(accessToken);
     String password = AppPasswordContext.get();
+    log.debug("사용자 이메일: {}", userInfo.getEmail());
 
     Session session = getMailSession();
     List<MailListResponse> mailList = new ArrayList<>();
@@ -103,6 +104,7 @@ public class NaverMailService implements MailService {
         }
       }
     } catch (MessagingException e) {
+      log.error("메일 리스트 가져오기 실패: {}", e.getMessage(), e);
       throw new MessagingException(e.getMessage());
     }
     return MailListContainerResponse.builder().mailListResponseList(mailList).build();
@@ -122,6 +124,7 @@ public class NaverMailService implements MailService {
         UIDFolder uidFolder = (UIDFolder) inbox;
         Message message = uidFolder.getMessageByUID(Long.parseLong(messageId));
         if (message == null) {
+          log.warn("Message not found with UID: " + messageId);
           throw new MessagingException("Message not found with UID: " + messageId);
         }
 
@@ -142,6 +145,7 @@ public class NaverMailService implements MailService {
             ).build();
       }
     } catch (AuthenticationFailedException authFailed) {
+      log.error("Mail server authentication failed.", authFailed);
       throw new AuthenticationRequiredException("Mail server authentication failed.", authFailed);
     }
   }
@@ -157,6 +161,7 @@ public class NaverMailService implements MailService {
     try (Transport transport = session.getTransport("smtp")) {
       transport.connect(userInfo.getEmail(), password);
       transport.sendMessage(mimeMessage, mimeMessage.getAllRecipients());
+      log.info("Mail sent successfully: From = {}, To = {}", userInfo.getEmail(), sendMailRequest.getTo());
     } catch (AuthenticationFailedException e) {
       log.error("SMTP Authentication failed for {}: {}", userInfo.getEmail(), e.getMessage(), e);
       throw new AuthenticationRequiredException("SMTP authentication failed. Please re-login.", e);
