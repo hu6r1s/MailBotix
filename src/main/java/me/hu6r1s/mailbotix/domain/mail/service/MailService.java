@@ -15,7 +15,8 @@ public interface MailService {
    * @param size 페이지 당 개수
    * @return 메일 목록 응답 DTO 리스트
    */
-  MailListContainerResponse listEmails(String userId, int size) throws IOException, GeneralSecurityException;
+  MailListContainerResponse listEmails(String userId, int size)
+      throws IOException, GeneralSecurityException, MessagingException;
 
   /**
    * 사용자의 특정 메일 상세 내용 조회

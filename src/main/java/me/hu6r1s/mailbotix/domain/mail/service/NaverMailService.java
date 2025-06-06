@@ -8,9 +8,7 @@ import jakarta.mail.Folder;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
-import jakarta.mail.NoSuchProviderException;
 import jakarta.mail.Part;
-import jakarta.mail.SendFailedException;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
 import jakarta.mail.Transport;
@@ -38,7 +36,6 @@ import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import me.hu6r1s.mailbotix.global.util.AppPasswordContext;
 import me.hu6r1s.mailbotix.global.util.TokenUtils;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
@@ -57,7 +54,6 @@ public class NaverMailService implements MailService {
   @Value("${spring.mail.port}")
   private int smtpPort;
 
-  private final StringRedisTemplate redisTemplate;
   private final TokenUtils tokenUtils;
 
   private Session getMailSession() {
@@ -76,167 +72,118 @@ public class NaverMailService implements MailService {
     return Session.getInstance(props);
   }
 
-  @Override
-  public MailListContainerResponse listEmails(String accessToken, int size)
-      throws IOException {
+  private NaverUserProfileResponse.Response getUserInfo(String accessToken) {
     HttpHeaders headers = new HttpHeaders();
     headers.setBearerAuth(accessToken);
-    HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
-    NaverUserProfileResponse.Response userInfo = tokenUtils.getUserInfoFromToken(requestEntity);
+    return tokenUtils.getUserInfoFromToken(new HttpEntity<>(headers));
+  }
+
+  @Override
+  public MailListContainerResponse listEmails(String accessToken, int size)
+      throws IOException, MessagingException {
+    NaverUserProfileResponse.Response userInfo = getUserInfo(accessToken);
     String password = AppPasswordContext.get();
 
     Session session = getMailSession();
     List<MailListResponse> mailList = new ArrayList<>();
 
-    Store store = null;
-    Folder inbox = null;
-    try {
-      store = session.getStore("imaps");
+    try (Store store = session.getStore("imaps")) {
       store.connect(userInfo.getEmail(), password);
+      try (Folder inbox = store.getFolder("INBOX")) {
+        inbox.open(Folder.READ_ONLY);
+        Message[] messages = getRecentMessages(inbox, size);
+        UIDFolder uidFolder = (UIDFolder) inbox;
 
-      inbox = store.getFolder("INBOX");
-      inbox.open(Folder.READ_ONLY);
-
-      int totalMessages = inbox.getMessageCount();
-      int start = Math.max(1, totalMessages - size + 1);
-      int end = totalMessages;
-      Message[] messages = inbox.getMessages(start, end);
-      UIDFolder uidFolder = (UIDFolder) inbox;
-      for (int i = messages.length -1 ; i >= 0; i--) {
-        Message message = messages[i];
-        Address[] fromAddresses = message.getFrom();
-        String from = MimeUtility.decodeText(fromAddresses[0].toString());
-        String subject = MimeUtility.decodeText(message.getSubject());
-        boolean hasAttachment = hasAttachment(message);
-        boolean unread = message.isSet(Flag.SEEN);
-        String messageId = String.valueOf(uidFolder.getUID(message));
-        mailList.add(new MailListResponse(
-            messageId, message.getReceivedDate().toString(),
-            MailListHeader.builder().subject(subject).from(from).build(),
-            hasAttachment,
-            unread
-        ));
-        if(mailList.size() >= size) break;
+        for (int i = messages.length - 1; i >= 0; i--) {
+          Message message = messages[i];
+          mailList.add(buildMailListResponse(uidFolder, message));
+          if (mailList.size() >= size) {
+            break;
+          }
+        }
       }
-
-      return MailListContainerResponse.builder()
-          .mailListResponseList(mailList)
-          .build();
     } catch (MessagingException e) {
-      throw new RuntimeException(e);
-    } finally {
-      if (inbox != null && inbox.isOpen()) {
-        try {
-          inbox.close(false);
-        } catch (MessagingException e) {
-          throw new RuntimeException(e);
-        }
-      }
-      if (store != null && store.isConnected()) {
-        try {
-          store.close();
-        } catch (MessagingException e) {
-          throw new RuntimeException(e);
-        }
-      }
+      throw new MessagingException(e.getMessage());
     }
+    return MailListContainerResponse.builder().mailListResponseList(mailList).build();
   }
 
   @Override
   public MailDetailContainerResponse getEmailContent(String messageId, String accessToken)
       throws IOException, MessagingException {
-    HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(accessToken);
-    HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
-
-    NaverUserProfileResponse.Response userInfo = tokenUtils.getUserInfoFromToken(requestEntity);
+    NaverUserProfileResponse.Response userInfo = getUserInfo(accessToken);
     String password = AppPasswordContext.get();
-
     Session session = getMailSession();
-    Store store = null;
-    Folder inbox = null;
-    try {
-      store = session.getStore("imaps");
+
+    try (Store store = session.getStore("imaps")) {
       store.connect(userInfo.getEmail(), password);
+      try (Folder inbox = store.getFolder("INBOX")) {
+        inbox.open(Folder.READ_ONLY);
+        UIDFolder uidFolder = (UIDFolder) inbox;
+        Message message = uidFolder.getMessageByUID(Long.parseLong(messageId));
+        if (message == null) {
+          throw new MessagingException("Message not found with UID: " + messageId);
+        }
 
-      inbox = store.getFolder("INBOX");
-      inbox.open(Folder.READ_ONLY);
+        MailDetailHeader mailHeaders = parseHeaders(message);
+        List<Attachment> attachments = new ArrayList<>();
+        StringBuilder bodyText = new StringBuilder();
 
-      UIDFolder uidFolder = (UIDFolder) inbox;
-      Message message = uidFolder.getMessageByUID(Long.parseLong(messageId));
+        parseMessageContent(message, bodyText, attachments);
 
-      if (message == null) {
-        throw new MessagingException("Message not found with UID: " + messageId);
+        return MailDetailContainerResponse.builder()
+            .mailDetailResponse(
+                MailDetailResponse.builder()
+                    .threadId(messageId)
+                    .headers(mailHeaders)
+                    .body(bodyText.toString())
+                    .attachments(attachments)
+                    .build()
+            ).build();
       }
-
-      MailDetailHeader mailHeaders = parseHeaders(message);
-      List<Attachment> attachments = new ArrayList<>();
-      StringBuilder bodyText = new StringBuilder();
-
-      parseMessageContent(message, bodyText, attachments);
-
-      MailDetailResponse mailDetailResponse = MailDetailResponse.builder()
-          .threadId(messageId)
-          .headers(mailHeaders)
-          .body(bodyText.toString())
-          .attachments(attachments)
-          .build();
-
-      return MailDetailContainerResponse.builder()
-          .mailDetailResponse(mailDetailResponse)
-          .build();
     } catch (AuthenticationFailedException authFailed) {
       throw new AuthenticationRequiredException("Mail server authentication failed.", authFailed);
-    } catch (NoSuchProviderException e) {
-      throw new RuntimeException(e);
-    } finally {
-      if (inbox != null && inbox.isOpen()) {
-        try {
-          inbox.close(false);
-        } catch (MessagingException e) {
-          throw new RuntimeException(e);
-        }
-      }
-      if (store != null && store.isConnected()) {
-        try {
-          store.close();
-        } catch (MessagingException e) {
-          throw new RuntimeException(e);
-        }
-      }
     }
   }
 
   @Override
   public void sendMail(SendMailRequest sendMailRequest, String accessToken)
       throws MessagingException {
-    HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(accessToken);
-    HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
-
-    NaverUserProfileResponse.Response userInfo = tokenUtils.getUserInfoFromToken(requestEntity);
+    NaverUserProfileResponse.Response userInfo = getUserInfo(accessToken);
     String password = AppPasswordContext.get();
-
     Session session = getMailSession();
-    Transport transport = null;
 
-    try {
-      MimeMessage mimeMessage = createMessage(session, userInfo.getEmail(), sendMailRequest);
-      transport = session.getTransport("smtp");
+    MimeMessage mimeMessage = createMessage(session, userInfo.getEmail(), sendMailRequest);
+    try (Transport transport = session.getTransport("smtp")) {
       transport.connect(userInfo.getEmail(), password);
       transport.sendMessage(mimeMessage, mimeMessage.getAllRecipients());
-    } catch (AuthenticationFailedException authFailed) {
-      log.error("SMTP XOAUTH2 Authentication failed for {}: {}", userInfo.getEmail(), authFailed.getMessage(), authFailed);
-      throw new AuthenticationRequiredException("SMTP authentication failed. Please re-login.", authFailed);
-    } catch (SendFailedException sendFailed) {
-      log.error("Failed to send email. Invalid addresses might exist.", sendFailed);
-      throw new MessagingException("Failed to send email due to invalid recipient addresses.", sendFailed);
-    } finally {
-      if (transport != null && transport.isConnected()) {
-        transport.close();
-      }
+    } catch (AuthenticationFailedException e) {
+      log.error("SMTP Authentication failed for {}: {}", userInfo.getEmail(), e.getMessage(), e);
+      throw new AuthenticationRequiredException("SMTP authentication failed. Please re-login.", e);
     }
+  }
 
+  private Message[] getRecentMessages(Folder inbox, int size) throws MessagingException {
+    int totalMessages = inbox.getMessageCount();
+    int start = Math.max(1, totalMessages - size + 1);
+    return inbox.getMessages(start, totalMessages);
+  }
+
+  private MailListResponse buildMailListResponse(UIDFolder uidFolder, Message message)
+      throws MessagingException, IOException {
+    String from = MimeUtility.decodeText(message.getFrom()[0].toString());
+    String subject = MimeUtility.decodeText(message.getSubject());
+    boolean hasAttachment = hasAttachment(message);
+    boolean unread = !message.isSet(Flag.SEEN);
+    String messageId = String.valueOf(uidFolder.getUID(message));
+
+    return new MailListResponse(
+        messageId,
+        message.getReceivedDate().toString(),
+        MailListHeader.builder().subject(subject).from(from).build(),
+        hasAttachment,
+        unread
+    );
   }
 
   private boolean hasAttachment(Message message) throws MessagingException, IOException {
@@ -246,7 +193,8 @@ public class NaverMailService implements MailService {
         BodyPart part = multipart.getBodyPart(i);
         String disposition = part.getDisposition();
         if (disposition != null &&
-            (disposition.equalsIgnoreCase(Part.ATTACHMENT) || disposition.equalsIgnoreCase(Part.INLINE))) {
+            (disposition.equalsIgnoreCase(Part.ATTACHMENT) || disposition.equalsIgnoreCase(
+                Part.INLINE))) {
           return true;
         }
       }
@@ -254,9 +202,11 @@ public class NaverMailService implements MailService {
     return false;
   }
 
-  private MailDetailHeader parseHeaders(Message message) throws MessagingException, UnsupportedEncodingException {
+  private MailDetailHeader parseHeaders(Message message)
+      throws MessagingException, UnsupportedEncodingException {
     String from = MimeUtility.decodeText(message.getFrom()[0].toString());
-    String subject = message.getSubject() != null ? MimeUtility.decodeText(message.getSubject()) : "";
+    String subject =
+        message.getSubject() != null ? MimeUtility.decodeText(message.getSubject()) : "";
     String sentDate = message.getSentDate() != null ? message.getSentDate().toString() : "";
 
     String to = "";
@@ -271,14 +221,16 @@ public class NaverMailService implements MailService {
     return MailDetailHeader.builder().from(from).to(to).subject(subject).date(sentDate).build();
   }
 
-  private void parseMessageContent(Part part, StringBuilder bodyContent, List<Attachment> attachments) throws IOException, MessagingException {
+  private void parseMessageContent(Part part, StringBuilder bodyContent,
+      List<Attachment> attachments) throws IOException, MessagingException {
     if (part.isMimeType("text/html") && bodyContent.length() == 0) {
       bodyContent.append((String) part.getContent());
     } else if (part.isMimeType("text/plain") && bodyContent.length() == 0) {
       bodyContent.append((String) part.getContent());
     }
 
-    if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition()) || (part.getFileName() != null && !part.getFileName().isEmpty() && !part.isMimeType("multipart/*")) ) {
+    if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition()) || (part.getFileName() != null
+        && !part.getFileName().isEmpty() && !part.isMimeType("multipart/*"))) {
       attachments.add(Attachment.builder()
           .filename(MimeUtility.decodeText(part.getFileName()))
           .mimeType(part.getContentType())
@@ -296,19 +248,21 @@ public class NaverMailService implements MailService {
     }
   }
 
-  private MimeMessage createMessage(Session session, String fromEmail, SendMailRequest sendMailRequest)
+  private MimeMessage createMessage(Session session, String fromEmail,
+      SendMailRequest sendMailRequest)
       throws MessagingException {
-      MimeMessage mimeMessage = new MimeMessage(session);
+    MimeMessage mimeMessage = new MimeMessage(session);
 
-      mimeMessage.setFrom(new InternetAddress(fromEmail));
+    mimeMessage.setFrom(new InternetAddress(fromEmail));
 
-      mimeMessage.addRecipient(Message.RecipientType.TO, new InternetAddress(sendMailRequest.getTo()));
-      mimeMessage.setSubject(sendMailRequest.getSubject(), "UTF-8");
-      mimeMessage.setContent(sendMailRequest.getMessageContent(), "text/html; charset=utf-8");
-      mimeMessage.setSentDate(new java.util.Date());
-      mimeMessage.setHeader("In-Reply-To", sendMailRequest.getOriginalMessageId());
-      mimeMessage.setHeader("References", sendMailRequest.getOriginalMessageId());
+    mimeMessage.addRecipient(Message.RecipientType.TO,
+        new InternetAddress(sendMailRequest.getTo()));
+    mimeMessage.setSubject(sendMailRequest.getSubject(), "UTF-8");
+    mimeMessage.setContent(sendMailRequest.getMessageContent(), "text/html; charset=utf-8");
+    mimeMessage.setSentDate(new java.util.Date());
+    mimeMessage.setHeader("In-Reply-To", sendMailRequest.getOriginalMessageId());
+    mimeMessage.setHeader("References", sendMailRequest.getOriginalMessageId());
 
-      return mimeMessage;
+    return mimeMessage;
   }
 }
