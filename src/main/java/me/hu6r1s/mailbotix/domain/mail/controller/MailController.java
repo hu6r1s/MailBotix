@@ -1,13 +1,10 @@
 package me.hu6r1s.mailbotix.domain.mail.controller;
 
 import com.auth0.jwt.JWT;
-import jakarta.mail.MessagingException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
-import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -140,11 +137,30 @@ public class MailController implements MailControllerDocs {
   @Override
   @PostMapping("/send")
   public void sendMail(@Valid @RequestBody SendMailRequest sendMailRequest,
-      HttpServletRequest request, HttpServletResponse response)
-      throws MessagingException, GeneralSecurityException, IOException {
-    HttpSession session = request.getSession(false);
-    MailService mailService = getActiveMailService(session);
-    String accessToken = cookieUtils.getAccessTokenFromCookie(request);
-    mailService.sendMail(sendMailRequest, accessToken);
+      HttpServletRequest request, HttpServletResponse response) {
+    try {
+      HttpSession session = request.getSession(false);
+      MailService mailService = getActiveMailService(session);
+
+      MailProvider mailProvider = MailProvider.valueOf(
+          ((String) session.getAttribute(SESSION_PROVIDER_KEY)).toUpperCase());
+
+      switch (mailProvider) {
+        case GOOGLE -> {
+          String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+          String userId = JWT.decode(accessToken).getSubject();
+          mailService.sendMail(sendMailRequest, userId);
+        }
+        case NAVER -> {
+          String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+          String password = cookieUtils.getAppPasswordFromCookie(request);
+          AppPasswordContext.set(password);
+          mailService.sendMail(sendMailRequest, accessToken);
+          AppPasswordContext.clear();
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 }

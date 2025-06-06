@@ -10,17 +10,21 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
 import jakarta.mail.NoSuchProviderException;
 import jakarta.mail.Part;
+import jakarta.mail.SendFailedException;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
+import jakarta.mail.Transport;
 import jakarta.mail.UIDFolder;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeUtility;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.hu6r1s.mailbotix.domain.auth.dto.NaverUserProfileResponse;
 import me.hu6r1s.mailbotix.domain.mail.dto.request.SendMailRequest;
 import me.hu6r1s.mailbotix.domain.mail.dto.response.Attachment;
@@ -37,9 +41,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service("naverMailService")
 @RequiredArgsConstructor
 public class NaverMailService implements MailService {
@@ -54,7 +58,6 @@ public class NaverMailService implements MailService {
   private int smtpPort;
 
   private final StringRedisTemplate redisTemplate;
-  private final JavaMailSender mailSender;
   private final TokenUtils tokenUtils;
 
   private Session getMailSession() {
@@ -67,6 +70,8 @@ public class NaverMailService implements MailService {
     props.put("mail.transport.protocol", "smtp");
     props.put("mail.smtp.host", smtpHost);
     props.put("mail.smtp.port", smtpPort);
+    props.put("mail.smtp.auth", "true");
+    props.put("mail.smtp.starttls.enable", "true");
 
     return Session.getInstance(props);
   }
@@ -203,8 +208,34 @@ public class NaverMailService implements MailService {
   }
 
   @Override
-  public void sendMail(SendMailRequest sendMailRequest, String userId)
-      throws MessagingException, IOException, GeneralSecurityException {
+  public void sendMail(SendMailRequest sendMailRequest, String accessToken)
+      throws MessagingException {
+    HttpHeaders headers = new HttpHeaders();
+    headers.setBearerAuth(accessToken);
+    HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+    NaverUserProfileResponse.Response userInfo = tokenUtils.getUserInfoFromToken(requestEntity);
+    String password = AppPasswordContext.get();
+
+    Session session = getMailSession();
+    Transport transport = null;
+
+    try {
+      MimeMessage mimeMessage = createMessage(session, userInfo.getEmail(), sendMailRequest);
+      transport = session.getTransport("smtp");
+      transport.connect(userInfo.getEmail(), password);
+      transport.sendMessage(mimeMessage, mimeMessage.getAllRecipients());
+    } catch (AuthenticationFailedException authFailed) {
+      log.error("SMTP XOAUTH2 Authentication failed for {}: {}", userInfo.getEmail(), authFailed.getMessage(), authFailed);
+      throw new AuthenticationRequiredException("SMTP authentication failed. Please re-login.", authFailed);
+    } catch (SendFailedException sendFailed) {
+      log.error("Failed to send email. Invalid addresses might exist.", sendFailed);
+      throw new MessagingException("Failed to send email due to invalid recipient addresses.", sendFailed);
+    } finally {
+      if (transport != null && transport.isConnected()) {
+        transport.close();
+      }
+    }
 
   }
 
@@ -252,7 +283,6 @@ public class NaverMailService implements MailService {
           .filename(MimeUtility.decodeText(part.getFileName()))
           .mimeType(part.getContentType())
           .size(part.getSize())
-          // .content(IOUtils.toByteArray(part.getInputStream())) // 실제 내용이 필요하면 주석 해제 (Base64 인코딩 필요)
           .build());
       return;
     }
@@ -264,5 +294,21 @@ public class NaverMailService implements MailService {
         parseMessageContent(bodyPart, bodyContent, attachments);
       }
     }
+  }
+
+  private MimeMessage createMessage(Session session, String fromEmail, SendMailRequest sendMailRequest)
+      throws MessagingException {
+      MimeMessage mimeMessage = new MimeMessage(session);
+
+      mimeMessage.setFrom(new InternetAddress(fromEmail));
+
+      mimeMessage.addRecipient(Message.RecipientType.TO, new InternetAddress(sendMailRequest.getTo()));
+      mimeMessage.setSubject(sendMailRequest.getSubject(), "UTF-8");
+      mimeMessage.setContent(sendMailRequest.getMessageContent(), "text/html; charset=utf-8");
+      mimeMessage.setSentDate(new java.util.Date());
+      mimeMessage.setHeader("In-Reply-To", sendMailRequest.getOriginalMessageId());
+      mimeMessage.setHeader("References", sendMailRequest.getOriginalMessageId());
+
+      return mimeMessage;
   }
 }

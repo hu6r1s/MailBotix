@@ -335,7 +335,7 @@ public class GoogleMailService implements MailService {
     MimeMessage reply = new MimeMessage(session);
     reply.setFrom(new InternetAddress("me"));
     reply.addRecipient(jakarta.mail.Message.RecipientType.TO, new InternetAddress(to));
-    reply.setSubject("Re: " + subject);
+    reply.setSubject(subject);
     reply.setText(replyMessage);
 
     reply.setHeader("In-Reply-To", originalMessageId);
