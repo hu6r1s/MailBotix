@@ -9,6 +9,6 @@ import lombok.Getter;
 @Builder
 public class MailListContainerResponse {
 
-  List<MailListResponse> mailListResponseList;
-  private final Credential credential;
+  private List<MailListResponse> mailListResponseList;
+  private Credential credential;
 }

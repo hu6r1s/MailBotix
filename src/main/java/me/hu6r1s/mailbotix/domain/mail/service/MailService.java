@@ -24,7 +24,7 @@ public interface MailService {
    * @return 메일 상세 응답 DTO
    */
   MailDetailContainerResponse getEmailContent(String messageId, String userId)
-      throws IOException, GeneralSecurityException;
+      throws IOException, GeneralSecurityException, MessagingException;
 
   /**
    * 지정된 사용자의 메일로 답장 보내기

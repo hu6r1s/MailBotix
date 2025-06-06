@@ -23,7 +23,7 @@ public interface MailControllerDocs {
 
   @Operation(summary = "특정 메일 조회", description = "특정 메일의 상세 내용을 조회하는 API")
   MailDetailResponse getEmailContent(@PathVariable String messageId, HttpServletRequest request, HttpServletResponse response)
-      throws IOException, GeneralSecurityException;
+      throws IOException, GeneralSecurityException, MessagingException;
 
   @Operation(summary = "메일 발송", description = "메일을 수신자에게 발송하는 API")
   void sendMail(@RequestBody SendMailRequest sendMailRequest, HttpServletRequest request, HttpServletResponse response)

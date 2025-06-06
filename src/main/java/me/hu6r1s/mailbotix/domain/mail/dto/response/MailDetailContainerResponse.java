@@ -8,6 +8,6 @@ import lombok.Getter;
 @Builder
 public class MailDetailContainerResponse {
 
-  MailDetailResponse mailDetailResponse;
-  private final Credential credential;
+  private MailDetailResponse mailDetailResponse;
+  private Credential credential;
 }

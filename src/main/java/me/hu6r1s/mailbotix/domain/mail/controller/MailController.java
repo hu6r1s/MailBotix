@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +22,6 @@ import me.hu6r1s.mailbotix.domain.mail.service.MailService;
 import me.hu6r1s.mailbotix.global.exception.AuthenticationRequiredException;
 import me.hu6r1s.mailbotix.global.util.AppPasswordContext;
 import me.hu6r1s.mailbotix.global.util.CookieUtils;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -70,7 +68,7 @@ public class MailController implements MailControllerDocs {
   public ResponseEntity<List<MailListResponse>> listEmails(
       HttpServletRequest request, HttpServletResponse response,
       @RequestParam(name = "size", defaultValue = "10") int size
-  ) throws GeneralSecurityException, IOException {
+  ) {
     try {
       HttpSession session = request.getSession(false);
       MailService mailService = getActiveMailService(session);
@@ -109,24 +107,34 @@ public class MailController implements MailControllerDocs {
   @Override
   @GetMapping("/read/{messageId}")
   public MailDetailResponse getEmailContent(@PathVariable String messageId,
-      HttpServletRequest request, HttpServletResponse response)
-      throws IOException, GeneralSecurityException {
-    HttpSession session = request.getSession(false);
-    MailService mailService = getActiveMailService(session);
-    String accessToken = cookieUtils.getAccessTokenFromCookie(request);
-    MailDetailContainerResponse mailDetailContainerResponse = mailService.getEmailContent(messageId,
-        accessToken);
+      HttpServletRequest request, HttpServletResponse response) {
+    try {
+      HttpSession session = request.getSession(false);
+      MailService mailService = getActiveMailService(session);
 
-    ResponseCookie userIdCookie = ResponseCookie.from("access_token", accessToken)
-        .httpOnly(true)
-        .secure(true)
-        .path("/")
-        .sameSite("Lax")
-        .maxAge(
-            Duration.ofSeconds(mailDetailContainerResponse.getCredential().getExpiresInSeconds()))
-        .build();
-    response.addHeader("Set-Cookie", userIdCookie.toString());
-    return mailDetailContainerResponse.getMailDetailResponse();
+      MailProvider mailProvider = MailProvider.valueOf(
+          ((String) session.getAttribute(SESSION_PROVIDER_KEY)).toUpperCase());
+      MailDetailContainerResponse mailDetailContainerResponse = null;
+      switch (mailProvider) {
+        case GOOGLE -> {
+          String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+          String userId = JWT.decode(accessToken).getSubject();
+          mailDetailContainerResponse = mailService.getEmailContent(messageId,
+              userId);
+        }
+        case NAVER -> {
+          String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+          String password = cookieUtils.getAppPasswordFromCookie(request);
+          AppPasswordContext.set(password);
+          mailDetailContainerResponse = mailService.getEmailContent(messageId,
+              accessToken);
+          AppPasswordContext.clear();
+        }
+      }
+      return mailDetailContainerResponse.getMailDetailResponse();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
