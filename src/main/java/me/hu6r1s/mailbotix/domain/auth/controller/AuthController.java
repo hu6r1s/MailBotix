@@ -118,15 +118,7 @@ public class AuthController implements AuthControllerDocs {
       redisTemplate.opsForValue().set(providerLower + ":" + userId + ":refresh", refreshToken, Duration.ofDays(7L));
     }
     session.setAttribute("provider", providerLower);
-
-    ResponseCookie tokenCookie = ResponseCookie.from("access_token", accessToken)
-        .httpOnly(true)
-        .secure(true)
-        .path("/")
-        .sameSite("Lax")
-        .maxAge(Duration.ofSeconds(expiresIn))
-        .build();
-    response.addHeader("Set-Cookie", tokenCookie.toString());
+    cookieUtils.setAccessTokenToCookie(response, accessToken, expiresIn);
 
     return new RedirectView(redirectUrl);
   }
@@ -151,14 +143,7 @@ public class AuthController implements AuthControllerDocs {
       String provider = (String) session.getAttribute("provider");
       googleOauthService.deleteDataStore(provider +":" + userId + ":refresh");
 
-      ResponseCookie deleteCookie = ResponseCookie.from("access_token", "")
-          .httpOnly(true)
-          .secure(true)
-          .path("/")
-          .maxAge(0)
-          .build();
-      response.addHeader("Set-Cookie", deleteCookie.toString());
-
+      cookieUtils.setAccessTokenToCookie(response, "", 0L);
       ResponseCookie deleteAppPassword = ResponseCookie.from("app_password", "")
           .httpOnly(true)
           .secure(true)

@@ -76,6 +76,7 @@ public class MailController implements MailControllerDocs {
       switch (mailProvider) {
         case GOOGLE -> {
           String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+          log.warn(accessToken);
           String userId = JWT.decode(accessToken).getSubject();
           mailListContainerResponse = mailService.listEmails(userId, size);
           cookieUtils.setAccessTokenToCookie(response,
@@ -119,6 +120,7 @@ public class MailController implements MailControllerDocs {
       switch (mailProvider) {
         case GOOGLE -> {
           String accessToken = cookieUtils.getAccessTokenFromCookie(request);
+          log.warn(accessToken);
           String userId = JWT.decode(accessToken).getSubject();
           mailDetailContainerResponse = mailService.getEmailContent(messageId,
               userId);

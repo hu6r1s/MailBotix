@@ -1,0 +1,50 @@
+<configuration>
+
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+  <property name="LOG_DIR" value="logs/mailbotix" /> <property name="LOG_PATTERN" value="%d{yyyy-MM-dd} [%thread] %-5level %logger{36} - %msg%n" />
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>${LOG_PATTERN}</pattern>
+    </encoder>
+  </appender>
+
+  <appender name="FILE_JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_DIR}/mailbotix-%d{yyyy-MM-dd}.log</fileNamePattern>
+      <maxHistory>30</maxHistory> </rollingPolicy>
+
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder" />
+
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>INFO</level>
+    </filter>
+  </appender>
+
+  <appender name="FILE_ERROR" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_DIR}/error-%d{yyyy-MM-dd}.log</fileNamePattern>
+      <maxHistory>30</maxHistory>
+    </rollingPolicy>
+
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <includeContext>true</includeContext>
+      <includeMdc>true</includeMdc>
+    </encoder>
+
+    <filter class="ch.qos.logback.classic.filter.LevelFilter">
+      <level>ERROR</level>
+      <onMatch>ACCEPT</onMatch>  <onMismatch>DENY</onMismatch> </filter>
+  </appender>
+
+  <logger name="org.springframework" level="INFO"/>
+  <logger name="com.zaxxer.hikari" level="WARN"/>
+
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+      <appender-ref ref="FILE_JSON"/>
+      <appender-ref ref="FILE_ERROR"/>
+    </root>
+
+</configuration>
