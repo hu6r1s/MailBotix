@@ -3,6 +3,8 @@ package me.hu6r1s.mailbotix.domain.mail.service;
 import jakarta.mail.Address;
 import jakarta.mail.AuthenticationFailedException;
 import jakarta.mail.BodyPart;
+import jakarta.mail.FetchProfile;
+import jakarta.mail.FetchProfile.Item;
 import jakarta.mail.Flags.Flag;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
@@ -16,8 +18,11 @@ import jakarta.mail.internet.MimeUtility;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Properties;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.hu6r1s.mailbotix.domain.auth.dto.NaverUserProfileResponse;
@@ -91,15 +96,34 @@ public class NaverMailService implements MailService {
       try (Folder inbox = store.getFolder("INBOX")) {
         inbox.open(Folder.READ_ONLY);
         Message[] messages = getRecentMessages(inbox, size);
+        FetchProfile fetchProfile = new FetchProfile();
+        fetchProfile.add(Item.ENVELOPE);
+        fetchProfile.add(Item.FLAGS);
+        fetchProfile.add(FetchProfile.Item.CONTENT_INFO);
+        fetchProfile.add(UIDFolder.FetchProfileItem.UID);
+        inbox.fetch(messages, fetchProfile);
         UIDFolder uidFolder = (UIDFolder) inbox;
 
-        for (int i = messages.length - 1; i >= 0; i--) {
-          Message message = messages[i];
-          mailList.add(buildMailListResponse(uidFolder, message));
-          if (mailList.size() >= size) {
-            break;
-          }
-        }
+        mailList = Arrays.stream(messages)
+            .parallel()
+            .sorted((m1, m2) -> {
+              try {
+                return m2.getReceivedDate().compareTo(m1.getReceivedDate());
+              } catch (MessagingException e) {
+                return 0;
+              }
+            })
+            .map(message -> {
+              try {
+                return buildMailListResponse(uidFolder, message);
+              } catch (Exception e) {
+                log.warn("메일 처리 중 예외 발생", e);
+                return null;
+              }
+            })
+            .filter(Objects::nonNull)
+            .limit(size)
+            .collect(Collectors.toList());
       }
     } catch (MessagingException e) {
       log.error("메일 리스트 가져오기 실패: {}", e.getMessage(), e);
