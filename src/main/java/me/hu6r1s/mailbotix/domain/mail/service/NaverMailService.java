@@ -11,10 +11,7 @@ import jakarta.mail.Multipart;
 import jakarta.mail.Part;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
-import jakarta.mail.Transport;
 import jakarta.mail.UIDFolder;
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeUtility;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -55,6 +52,7 @@ public class NaverMailService implements MailService {
   private int smtpPort;
 
   private final TokenUtils tokenUtils;
+  private final MailAsyncService mailAsyncService;
 
   private Session getMailSession() {
     Properties props = new Properties();
@@ -157,15 +155,7 @@ public class NaverMailService implements MailService {
     String password = AppPasswordContext.get();
     Session session = getMailSession();
 
-    MimeMessage mimeMessage = createMessage(session, userInfo.getEmail(), sendMailRequest);
-    try (Transport transport = session.getTransport("smtp")) {
-      transport.connect(userInfo.getEmail(), password);
-      transport.sendMessage(mimeMessage, mimeMessage.getAllRecipients());
-      log.info("Mail sent successfully: From = {}, To = {}", userInfo.getEmail(), sendMailRequest.getTo());
-    } catch (AuthenticationFailedException e) {
-      log.error("SMTP Authentication failed for {}: {}", userInfo.getEmail(), e.getMessage(), e);
-      throw new AuthenticationRequiredException("SMTP authentication failed. Please re-login.", e);
-    }
+    mailAsyncService.sendMailAsync(sendMailRequest, session, userInfo.getEmail(), password);
   }
 
   private Message[] getRecentMessages(Folder inbox, int size) throws MessagingException {
@@ -251,23 +241,5 @@ public class NaverMailService implements MailService {
         parseMessageContent(bodyPart, bodyContent, attachments);
       }
     }
-  }
-
-  private MimeMessage createMessage(Session session, String fromEmail,
-      SendMailRequest sendMailRequest)
-      throws MessagingException {
-    MimeMessage mimeMessage = new MimeMessage(session);
-
-    mimeMessage.setFrom(new InternetAddress(fromEmail));
-
-    mimeMessage.addRecipient(Message.RecipientType.TO,
-        new InternetAddress(sendMailRequest.getTo()));
-    mimeMessage.setSubject(sendMailRequest.getSubject(), "UTF-8");
-    mimeMessage.setContent(sendMailRequest.getMessageContent(), "text/html; charset=utf-8");
-    mimeMessage.setSentDate(new java.util.Date());
-    mimeMessage.setHeader("In-Reply-To", sendMailRequest.getOriginalMessageId());
-    mimeMessage.setHeader("References", sendMailRequest.getOriginalMessageId());
-
-    return mimeMessage;
   }
 }
